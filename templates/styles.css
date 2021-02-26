@@ -1,0 +1,129 @@
+/* General Styles */
+body {
+  font-family: Arial, sans-serif;
+  text-align: center;
+  margin: 40px;
+  background-color: #eeeeee; /* Light grey */
+  color: #333;
+}
+
+/* Main Container */
+.container {
+  background: white;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  display: inline-block;
+  width: 90%;
+  max-width: 600px;
+  border: 1px solid #ccc; /* Slight border for better visibility */
+}
+
+/* Buttons */
+button {
+  padding: 12px;
+  margin: 5px;
+  border: none;
+  cursor: pointer;
+  border-radius: 8px;
+  width: 100%;
+  text-align: center;
+  transition: 0.3s;
+  font-size: 1em;
+  font-weight: bold;
+}
+
+button:disabled {
+  background-color: #d6d6d6 !important;
+  cursor: not-allowed;
+  color: #888;
+}
+
+/* Direct Internet Button */
+.direct {
+  background-color: #555; /* Dark grey */
+  color: white;
+}
+
+.direct:hover {
+  background-color: #444;
+}
+
+/* Private Node */
+.private-node {
+  background-color: #4caf50; /* Green */
+  color: white;
+}
+
+.private-node:hover {
+  background-color: #3d8e41;
+}
+
+/* Exit Node */
+.exit-node {
+  background-color: #081808; /* Medium grey */
+  color: white;
+}
+
+.exit-node:hover {
+  background-color: #3d8e41;
+}
+
+/* Status Box */
+.status-box {
+  padding: 10px;
+  background-color: #f0f0f0; /* Light grey */
+  border: 1px solid #ccc;
+  margin-top: 10px;
+  border-radius: 5px;
+}
+
+/* Info Box */
+.info-box {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: #4caf50;
+  color: white;
+  padding: 15px;
+  border-radius: 8px;
+  display: none;
+  opacity: 1;
+  transition: opacity 0.5s ease-in-out;
+  text-align: center;
+  font-size: 1.2em;
+  min-width: 250px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+/* Pagination */
+.pagination {
+  margin-top: 10px;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.pagination button {
+  background-color: #4caf50;
+  color: white;
+}
+
+.pagination button:hover {
+  background-color: #3d8e41;
+}
+
+/* Separator */
+.separator {
+  border-top: 2px solid #bbb;
+  margin: 10px 0;
+}
+
+/* Active Node */
+.active-node {
+  background-color: #9ccc65 !important; /* Softer green highlight */
+  color: black !important;
+  font-weight: bold;
+  border: 2px solid #7cb342;
+}

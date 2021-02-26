@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tailscale Router Control</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="infoBox" class="info-box"></div>
+
+    <div class="container">
+        <h2>Tailscale Router Control</h2>
+        <p>
+            <strong>Current Mode:</strong> <span id="currentMode">Loading...</span>
+        </p>
+
+        <div class="status-box">
+            <h3>Available Exit Nodes</h3>
+            <div id="exitNodesList"></div>
+        </div>
+
+        <div class="pagination">
+            <button id="prevPage" disabled>⬅ Previous</button>
+            <span id="pageInfo"></span>
+            <button id="nextPage" disabled>Next ➡</button>
+        </div>
+
+        <br />
+        <button class="direct" onclick="switchMode('direct')">
+            Switch to Direct Internet
+        </button>
+        <br /><br />
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

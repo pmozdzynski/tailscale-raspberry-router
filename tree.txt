@@ -1,0 +1,10 @@
+/tailscale-raspberry-router
+│── /handlers
+│   │── handlers.go
+│   │── mode.go
+│   │── tailscale.go
+│   │── network.go
+│── main.go
+│── /templates
+│   │── friendly-names.json
+│   │── index.html
