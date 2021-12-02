@@ -37,9 +37,24 @@ func main() {
 	checkRootPrivileges()  // Ensure script is running as root
 	checkTailscaleStatus() // Ensure Tailscale is installed and running
 
-	// Serve all files in ./templates
+	// Authentication endpoints (no auth required)
+	http.HandleFunc("/login", handlers.LoginHandler)
+	http.HandleFunc("/logout", handlers.LogoutHandler)
+
+	// Serve static files (CSS, JS, JSON) without authentication
 	fs := http.FileServer(http.Dir("./templates"))
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/styles.css", func(w http.ResponseWriter, r *http.Request) {
+		fs.ServeHTTP(w, r)
+	})
+	http.HandleFunc("/script.js", func(w http.ResponseWriter, r *http.Request) {
+		fs.ServeHTTP(w, r)
+	})
+	http.HandleFunc("/friendly-names.json", func(w http.ResponseWriter, r *http.Request) {
+		fs.ServeHTTP(w, r)
+	})
+
+	// Protected routes (require authentication)
+	http.HandleFunc("/", handlers.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
 		// Serve index.html when accessing "/"
 		if r.URL.Path == "/" {
 			http.ServeFile(w, r, "./templates/index.html")
@@ -47,11 +62,11 @@ func main() {
 		}
 		// Serve other files normally
 		fs.ServeHTTP(w, r)
-	})
+	}))
 
-	// API Endpoints
-	http.HandleFunc("/status", handlers.StatusHandler)
-	http.HandleFunc("/set-mode", handlers.SetModeHandler)
+	// Protected API Endpoints
+	http.HandleFunc("/status", handlers.RequireAuth(handlers.StatusHandler))
+	http.HandleFunc("/set-mode", handlers.RequireAuth(handlers.SetModeHandler))
 
 	// Debugging: Log available files in the templates directory
 	files, err := os.ReadDir("./templates")
