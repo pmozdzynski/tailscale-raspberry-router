@@ -104,6 +104,8 @@ Then, access the Web UI at:
 http://<your-device-ip>:5000
 ```
 
+> **Note:** The router automatically optimizes routing changes by flushing ARP and routing caches. If `arping` is installed (`sudo apt-get install iputils-arping`), it will use gratuitous ARP announcements for even faster updates, but it's not required - the router works fine without it.
+
 ### **🔐 Authentication**
 
 The Web UI is protected by authentication. When you first access the dashboard, you'll be redirected to a login page.

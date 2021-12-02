@@ -166,6 +166,14 @@ func SetTailscaleExitNode(node string) error {
 	// Enable IP forwarding
 	exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1").Run()
 
+	// Ensure connection tracking modules are loaded
+	exec.Command("modprobe", "nf_conntrack").Run()
+	exec.Command("modprobe", "nf_conntrack_ipv4").Run()
+
+	// Set connection tracking timeouts (helps with Tailscale connection tracking)
+	exec.Command("sysctl", "-w", "net.netfilter.nf_conntrack_tcp_timeout_established=432000").Run()
+	exec.Command("sysctl", "-w", "net.netfilter.nf_conntrack_tcp_timeout_time_wait=120").Run()
+
 	// Set Tailscale exit node
 	err = exec.Command("tailscale", "set", "--exit-node="+exitNode.IP).Run()
 	if err != nil {
@@ -184,15 +192,16 @@ func SetTailscaleExitNode(node string) error {
 	if err != nil {
 		log.Printf("Warning: Could not detect LAN interfaces: %v", err)
 		log.Println("Using permissive forwarding rules (allowing all interfaces)")
-		// Allow forwarding from any interface to tailscale0 as fallback
-		exec.Command("iptables", "-A", "FORWARD", "-o", "tailscale0", "-j", "ACCEPT").Run()
+		// Allow forwarding from any interface to tailscale0 (NEW and ESTABLISHED connections)
+		exec.Command("iptables", "-A", "FORWARD", "-o", "tailscale0", "-m", "state", "--state", "NEW,RELATED,ESTABLISHED", "-j", "ACCEPT").Run()
+		// Allow return traffic from tailscale0
 		exec.Command("iptables", "-A", "FORWARD", "-i", "tailscale0", "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT").Run()
 	} else {
 		// Set up forwarding rules for each LAN interface
 		for _, lanIface := range lanInterfaces {
 			log.Printf("Setting up forwarding from %s to tailscale0", lanIface)
-			// Allow forwarding from LAN interface to tailscale0
-			exec.Command("iptables", "-A", "FORWARD", "-i", lanIface, "-o", "tailscale0", "-j", "ACCEPT").Run()
+			// Allow forwarding from LAN interface to tailscale0 (NEW and ESTABLISHED connections)
+			exec.Command("iptables", "-A", "FORWARD", "-i", lanIface, "-o", "tailscale0", "-m", "state", "--state", "NEW,RELATED,ESTABLISHED", "-j", "ACCEPT").Run()
 			// Allow return traffic from tailscale0 to LAN interface
 			exec.Command("iptables", "-A", "FORWARD", "-i", "tailscale0", "-o", lanIface, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT").Run()
 		}
@@ -226,6 +235,10 @@ func DisableTailscaleExitNode() error {
 	// Enable IP forwarding
 	exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1").Run()
 
+	// Ensure connection tracking modules are loaded
+	exec.Command("modprobe", "nf_conntrack").Run()
+	exec.Command("modprobe", "nf_conntrack_ipv4").Run()
+
 	// Detect the active internet interface
 	interfaceName, err := GetActiveInternetInterface()
 	if err != nil {
@@ -243,15 +256,16 @@ func DisableTailscaleExitNode() error {
 	if err != nil {
 		log.Printf("Warning: Could not detect LAN interfaces: %v", err)
 		log.Println("Using permissive forwarding rules (allowing all interfaces)")
-		// Allow forwarding from any interface to WAN as fallback
-		exec.Command("iptables", "-A", "FORWARD", "-o", interfaceName, "-j", "ACCEPT").Run()
+		// Allow forwarding from any interface to WAN (NEW and ESTABLISHED connections)
+		exec.Command("iptables", "-A", "FORWARD", "-o", interfaceName, "-m", "state", "--state", "NEW,RELATED,ESTABLISHED", "-j", "ACCEPT").Run()
+		// Allow return traffic from WAN
 		exec.Command("iptables", "-A", "FORWARD", "-i", interfaceName, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT").Run()
 	} else {
 		// Set up forwarding rules for each LAN interface
 		for _, lanIface := range lanInterfaces {
 			log.Printf("Setting up forwarding from %s to %s", lanIface, interfaceName)
-			// Allow forwarding from LAN interface to WAN interface
-			exec.Command("iptables", "-A", "FORWARD", "-i", lanIface, "-o", interfaceName, "-j", "ACCEPT").Run()
+			// Allow forwarding from LAN interface to WAN interface (NEW and ESTABLISHED connections)
+			exec.Command("iptables", "-A", "FORWARD", "-i", lanIface, "-o", interfaceName, "-m", "state", "--state", "NEW,RELATED,ESTABLISHED", "-j", "ACCEPT").Run()
 			// Allow return traffic from WAN to LAN interface
 			exec.Command("iptables", "-A", "FORWARD", "-i", interfaceName, "-o", lanIface, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT").Run()
 		}
