@@ -1,14 +1,13 @@
 package handlers
 
 import (
-	"fmt"
 	"log"
-	"net/http"
 	"strings"
 	"time"
 )
 
 // RestorePreviousMode restores the last known mode after startup.
+// This function calls the handler functions directly (not via HTTP) to avoid authentication issues.
 func RestorePreviousMode() {
 	log.Println("Checking saved mode on startup...")
 
@@ -29,27 +28,28 @@ func RestorePreviousMode() {
 		return
 	}
 
-	// Restore mode from JSON
+	// Wait a bit more for Tailscale to be fully ready
+	time.Sleep(2 * time.Second)
+
+	// Restore mode from JSON by calling handler functions directly
 	if CurrentMode != "direct" && strings.HasPrefix(CurrentMode, "tailscale:") {
 		node := strings.TrimPrefix(CurrentMode, "tailscale:")
-		log.Printf("Requesting mode restore via API: %s", node)
+		log.Printf("Restoring exit node mode: %s", node)
 
-		resp, err := http.Post(fmt.Sprintf("http://localhost:5000/set-mode?mode=tailscale&node=%s", node), "application/json", nil)
+		err := SetTailscaleExitNode(node)
 		if err != nil {
-			log.Printf("Failed to restore mode via API: %v", err)
+			log.Printf("Failed to restore exit node mode: %v", err)
 		} else {
-			log.Printf("Successfully restored mode via API: %s", node)
-			resp.Body.Close()
+			log.Printf("Successfully restored exit node mode: %s", node)
 		}
 	} else {
-		log.Println("Requesting direct mode restore via API")
+		log.Println("Restoring direct mode")
 
-		resp, err := http.Post("http://localhost:5000/set-mode?mode=direct", "application/json", nil)
+		err := DisableTailscaleExitNode()
 		if err != nil {
-			log.Printf("Failed to restore direct mode via API: %v", err)
+			log.Printf("Failed to restore direct mode: %v", err)
 		} else {
-			log.Println("Successfully restored direct mode via API")
-			resp.Body.Close()
+			log.Println("Successfully restored direct mode")
 		}
 	}
 }
