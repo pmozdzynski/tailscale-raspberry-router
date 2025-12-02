@@ -89,6 +89,35 @@ func GetActiveInternetInterface() (string, error) {
 	return interfaceName, nil
 }
 
+// GetLANInterfaces detects LAN interfaces (non-default route, non-loopback, non-tailscale interfaces)
+func GetLANInterfaces() ([]string, error) {
+	// Get the default route interface
+	defaultInterface, err := GetActiveInternetInterface()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get all interfaces
+	cmd := exec.Command("sh", "-c", "ip -o link show | awk -F': ' '{print $2}'")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list interfaces: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	var lanInterfaces []string
+
+	for _, iface := range lines {
+		iface = strings.TrimSpace(iface)
+		// Skip loopback, default route interface, and tailscale interface
+		if iface != "lo" && iface != defaultInterface && iface != "tailscale0" && iface != "" {
+			lanInterfaces = append(lanInterfaces, iface)
+		}
+	}
+
+	return lanInterfaces, nil
+}
+
 // Check if Mullvad Exit Nodes are Enabled for this Device
 func IsMullvadEnabled() bool {
 	cmd := exec.Command("tailscale", "status")

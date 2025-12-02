@@ -28,6 +28,7 @@ This project allows:
 ✅ **Allows external DHCP configuration (e.g., `dnsmasq` for local clients)**  
 ✅ **Supports `friendly-names.json` to assign friendly names to exit nodes**  
 ✅ **Acts as a VPN router for devices needing secure and consistent VPN connections**  
+✅ **Web-based authentication with session management for secure access**  
 
 ---
 
@@ -102,6 +103,53 @@ Then, access the Web UI at:
 ```
 http://<your-device-ip>:5000
 ```
+
+### **🔐 Authentication**
+
+The Web UI is protected by authentication. When you first access the dashboard, you'll be redirected to a login page.
+
+**Default Credentials:**
+- **Username:** `admin`
+- **Password:** `admin`
+
+> **⚠️ Security Note:** Change the default credentials in production using environment variables (see below).
+
+**Customizing Credentials:**
+
+You can set custom credentials using environment variables. Edit the systemd service file:
+```sh
+sudo nano /etc/systemd/system/tailscale-router.service
+```
+
+Add environment variables in the `[Service]` section:
+```
+[Service]
+Type=idle
+Environment="AUTH_USERNAME=myusername"
+Environment="AUTH_PASSWORD=mypassword"
+Environment="SESSION_SECRET=your-secret-key-here-min-32-chars"
+ExecStartPre=/bin/sh -c 'echo "Starting Tailscale Router service, please wait..." | systemd-cat -t tailscale-router'; /bin/sleep 15
+ExecStart=/opt/tailscale-raspberry-router/tailscale-raspberry-router
+...
+```
+
+Then reload and restart:
+```sh
+sudo systemctl daemon-reload
+sudo systemctl restart tailscale-router.service
+```
+
+**Environment Variables:**
+- `AUTH_USERNAME` - Custom username (default: `admin`)
+- `AUTH_PASSWORD` - Custom password (default: `admin`)
+- `SESSION_SECRET` - Session encryption key (recommended for production, minimum 32 characters)
+
+**Features:**
+- Browser password saving support (autocomplete enabled)
+- Session-based authentication (7-day sessions)
+- Secure cookie storage
+- Logout functionality available in the dashboard
+
 Use this interface to log in and select an **exit node**.
 
 Please note: You must have at least 1 active Exit node on your account to see anything it in router web-UI. You can check them here https://login.tailscale.com/admin/machines  
