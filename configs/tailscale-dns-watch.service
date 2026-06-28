@@ -1,0 +1,15 @@
+[Unit]
+Description=Reload dnsmasq when Tailscale DNS or exit node state changes
+After=tailscaled.service dnsmasq.service network-online.target
+Wants=tailscaled.service dnsmasq.service
+
+[Service]
+Type=simple
+ExecStartPre=/bin/sleep 10
+ExecStart=/usr/local/bin/tailscale-dns-watch.sh
+Restart=always
+RestartSec=10
+Environment=TAILSCALE_DNS_WATCH_INTERVAL=15
+
+[Install]
+WantedBy=multi-user.target

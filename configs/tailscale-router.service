@@ -1,0 +1,15 @@
+[Unit]
+Description=Tailscale VPN Router
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/tailscale-raspberry-router
+ExecStart=/opt/tailscale-raspberry-router/tailscale-raspberry-router
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target

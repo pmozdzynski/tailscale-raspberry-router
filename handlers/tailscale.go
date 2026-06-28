@@ -215,6 +215,8 @@ func SetTailscaleExitNode(node string) error {
 	CurrentMode = "tailscale:" + node
 	SaveMode(CurrentMode)
 
+	ReloadDnsmasqUpstream()
+
 	return nil
 }
 
@@ -278,6 +280,8 @@ func DisableTailscaleExitNode() error {
 
 	CurrentMode = "direct"
 	SaveMode(CurrentMode)
+
+	ReloadDnsmasqUpstream()
 
 	return nil
 }

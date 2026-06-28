@@ -127,3 +127,59 @@ button:disabled {
   font-weight: bold;
   border: 2px solid #7cb342;
 }
+
+.setup-container {
+  max-width: 720px;
+  text-align: left;
+}
+
+.setup-intro {
+  color: #666;
+  margin-bottom: 1rem;
+}
+
+.setup-form label {
+  display: block;
+  margin: 0.75rem 0;
+  font-weight: bold;
+}
+
+.setup-form input,
+.setup-form select {
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-sizing: border-box;
+  font-size: 1rem;
+}
+
+.setup-form h3 {
+  margin-top: 1.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.hint {
+  font-size: 0.9rem;
+  color: #666;
+}
+
+#networkSummary {
+  font-family: monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  text-align: left;
+}
+
+@media (max-width: 640px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}

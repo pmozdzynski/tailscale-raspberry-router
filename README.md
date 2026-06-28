@@ -34,7 +34,49 @@ This project allows:
 
 ## **💻 Installation & Setup**
 
-### **1️⃣ Install & Authenticate Tailscale**
+### **Quick install (recommended)**
+
+Assumes **nothing is pre-installed** except a basic Debian/Raspberry Pi OS with network connectivity.
+
+On the device:
+
+```sh
+git clone https://github.com/pmozdzynski/tailscale-raspberry-router.git
+cd tailscale-raspberry-router
+
+# Build on your PC, copy binary into repo root (Pi 1 example):
+# GOOS=linux GOARCH=arm GOARM=6 go build -o tailscale-raspberry-router main.go
+
+sudo ./scripts/install.sh
+```
+
+`install.sh` only copies the app and starts the service. **dnsmasq, Tailscale, iptables, and LAN config are installed by the web wizard.**
+
+Open the setup wizard (use any IP shown — WAN IP from ISP/router is auto-detected, not configured):
+
+```
+http://<device-ip>:5000/setup
+```
+
+If the IP is unknown, find it with `ip -4 addr show` or your router's DHCP client list.
+
+The wizard will:
+- **Auto-detect interfaces and default route** (WAN stays on existing DHCP)
+- **Suggest a LAN subnet** that does not overlap the WAN network
+- **Install missing packages** via apt (dnsmasq, iptables, curl, Tailscale)
+- Configure **LAN static IP + DHCP + DNS forwarding**
+- Connect **Tailscale** (auth key required on fresh installs)
+- Set **dashboard login** credentials
+
+After setup, use the dashboard at `http://<device-ip>:5000/` to switch exit nodes.
+
+To reconfigure from scratch, remove `/etc/tailscale-router/config.json` and restart the service.
+
+---
+
+### **Manual install**
+
+#### **1️⃣ Install & Authenticate Tailscale**
 ```sh
 curl -fsSL https://tailscale.com/install.sh | sh
 ```
@@ -183,10 +225,62 @@ The output should match the external IP of the selected exit node.
 
 ---
 
+## **🌐 LAN DNS (dnsmasq + Tailscale exit nodes)**
+
+LAN clients should use the Pi as DNS (`192.168.50.1`). The Pi forwards upstream to either **NetworkManager** (direct mode) or **Tailscale MagicDNS** (`100.100.100.100`) when an exit node is active.
+
+### **1️⃣ Point dnsmasq at a managed upstream file**
+
+If you already use NetworkManager on Debian 13, change **one line** in `/etc/dnsmasq.conf`:
+
+```
+# Before (ISP DNS only — won't follow exit node in Mode 2):
+# resolv-file=/run/NetworkManager/no-stub-resolv.conf
+
+# After:
+no-resolv
+resolv-file=/run/tailscale-router/upstream.conf
+```
+
+See `configs/dnsmasq-eth1.conf.example` for a full LAN config.
+
+### **2️⃣ Install DNS helper scripts**
+
+```sh
+sudo install -m 755 scripts/update-dns.sh /usr/local/bin/update-dns.sh
+sudo install -m 755 scripts/tailscale-dns-watch.sh /usr/local/bin/tailscale-dns-watch.sh
+sudo update-dns.sh   # creates /run/tailscale-router/upstream.conf from NM
+sudo systemctl restart dnsmasq
+```
+
+### **3️⃣ Optional: watch Tailscale in the background**
+
+Reloads dnsmasq when Tailscale connects/disconnects or exit node changes:
+
+```sh
+sudo cp configs/tailscale-dns-watch.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now tailscale-dns-watch.service
+```
+
+The Go router also runs `update-dns.sh` whenever you switch exit nodes in the web UI.
+
+### **Verify DNS path**
+
+```sh
+cat /run/tailscale-router/upstream.conf
+resolvectl status 2>/dev/null || true
+```
+
+On a LAN client after selecting an exit node, DNS should resolve via the exit node's network (Mullvad DNS, etc.).
+
+---
+
 ## **🐝 Cross-Platform Compatibility**
 This project supports multiple architectures, including:
 - **Raspberry Pi 4 (ARM64)**
-- **Raspberry Pi 3/2/1 (ARM32 with GOARM=7)**
+- **Raspberry Pi 3/2 (ARM32 with GOARM=7)**
+- **Raspberry Pi 1 (ARMv6 with GOARM=6)**
 - **x86_64 Linux Desktops**
 - **Other Linux-based single-board computers**
 

@@ -24,7 +24,10 @@ func RestorePreviousMode() {
 
 	// If no nodes were found, log an error
 	if len(exitNodes) == 0 {
-		log.Println("No exit nodes detected! Cannot restore previous mode.")
+		log.Println("No exit nodes detected! Staying in direct mode.")
+		if CurrentMode == "direct" {
+			_ = DisableTailscaleExitNode()
+		}
 		return
 	}
 

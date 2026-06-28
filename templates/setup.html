@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tailscale Router Setup</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="infoBox" class="info-box"></div>
+
+    <div class="container setup-container">
+        <h2>Tailscale Router — First-Time Setup</h2>
+        <p class="setup-intro">
+            Assumes a fresh Linux device. WAN keeps whatever IP your ISP/router assigns via DHCP.
+            This wizard installs dnsmasq and Tailscale, then configures LAN routing.
+        </p>
+
+        <div class="status-box">
+            <h3>Detected Network</h3>
+            <div id="networkSummary">Loading...</div>
+            <div id="accessUrls" class="hint"></div>
+        </div>
+
+        <form id="setupForm" class="setup-form">
+            <h3>Interfaces</h3>
+            <p class="hint">WAN is auto-detected from the default route. Its IP is unknown until DHCP completes — that is expected.</p>
+            <label>WAN interface (internet, DHCP — do not change IP)
+                <select id="wanInterface" required></select>
+            </label>
+            <label>LAN interface (clients)
+                <select id="lanInterface" required></select>
+            </label>
+
+            <h3>LAN &amp; DHCP</h3>
+            <p class="hint" id="lanSuggestion">Suggested LAN subnet will appear after detection.</p>
+            <div class="grid-2">
+                <label>LAN gateway IP
+                    <input id="lanAddress" type="text" placeholder="auto" required>
+                </label>
+                <label>Prefix
+                    <input id="lanPrefix" type="number" min="8" max="30" placeholder="24" required>
+                </label>
+            </div>
+            <div class="grid-2">
+                <label>DHCP start
+                    <input id="dhcpStart" type="text" placeholder="auto" required>
+                </label>
+                <label>DHCP end
+                    <input id="dhcpEnd" type="text" placeholder="auto" required>
+                </label>
+            </div>
+
+            <h3>Tailscale</h3>
+            <label>Hostname
+                <input id="tailscaleHost" type="text" placeholder="device hostname">
+            </label>
+            <label>Auth key
+                <input id="tailscaleAuthKey" type="password" placeholder="tskey-auth-..." required>
+            </label>
+            <p class="hint">Required on fresh installs. Create at <a href="https://login.tailscale.com/admin/settings/keys" target="_blank">Tailscale admin</a>.</p>
+
+            <h3>Dashboard Login</h3>
+            <div class="grid-2">
+                <label>Username
+                    <input id="adminUser" type="text" value="admin" required>
+                </label>
+                <label>Password
+                    <input id="adminPass" type="password" required>
+                </label>
+            </div>
+
+            <p class="hint" id="packageStatus"></p>
+            <button type="submit" id="applyBtn" class="direct">Install &amp; Configure</button>
+        </form>
+    </div>
+
+    <script src="setup.js"></script>
+</body>
+</html>

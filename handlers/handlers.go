@@ -23,7 +23,15 @@ func StatusHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Check if Tailscale is running before responding
 	if !IsTailscaleRunning() {
-		http.Error(w, "Tailscale is not running or not installed", http.StatusServiceUnavailable)
+		response := map[string]interface{}{
+			"mode":       CurrentMode,
+			"exitNodes":  map[string]ExitNode{},
+			"configured": IsConfigured(),
+			"network":    GetNetworkSnapshot(),
+			"warning":    "Tailscale is not connected",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 
@@ -34,8 +42,10 @@ func StatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]interface{}{
-		"mode":      CurrentMode,
-		"exitNodes": exitNodes,
+		"mode":       CurrentMode,
+		"exitNodes":  exitNodes,
+		"configured": IsConfigured(),
+		"network":    GetNetworkSnapshot(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -74,6 +84,13 @@ func SetModeHandler(w http.ResponseWriter, r *http.Request) {
 
 // GetActiveInternetInterface detects the main internet interface dynamically.
 func GetActiveInternetInterface() (string, error) {
+	if IsConfigured() {
+		iface := ConfiguredWAN()
+		if iface != "" {
+			return iface, nil
+		}
+	}
+
 	cmd := exec.Command("sh", "-c", "ip route | grep default | awk '{print $5}'")
 	output, err := cmd.Output()
 	if err != nil {
@@ -91,6 +108,10 @@ func GetActiveInternetInterface() (string, error) {
 
 // GetLANInterfaces detects LAN interfaces (non-default route, non-loopback, non-tailscale interfaces)
 func GetLANInterfaces() ([]string, error) {
+	if IsConfigured() {
+		return ConfiguredLANInterfaces()
+	}
+
 	// Get the default route interface
 	defaultInterface, err := GetActiveInternetInterface()
 	if err != nil {
@@ -133,7 +154,10 @@ func IsMullvadEnabled() bool {
 
 // Check if Tailscale is Running
 func IsTailscaleRunning() bool {
+	if _, err := exec.LookPath("tailscale"); err != nil {
+		return false
+	}
 	cmd := exec.Command("tailscale", "status")
 	err := cmd.Run()
-	return err == nil // ✅ Returns true if Tailscale is running, false if not
+	return err == nil
 }

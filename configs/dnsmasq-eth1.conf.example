@@ -1,0 +1,21 @@
+# Example dnsmasq config for LAN on eth1 (Debian 13 + NetworkManager).
+# Install: sudo cp configs/dnsmasq-eth1.conf.example /etc/dnsmasq.conf
+# Or merge these lines into your existing config.
+
+interface=eth1
+bind-interfaces
+
+dhcp-range=192.168.50.100,192.168.50.200,255.255.255.0,12h
+dhcp-option=3,192.168.50.1
+dhcp-option=6,192.168.50.1
+
+# Upstream resolvers are managed by scripts/update-dns.sh
+no-resolv
+resolv-file=/run/tailscale-router/upstream.conf
+
+cache-size=1000
+domain-needed
+bogus-priv
+
+# Uncomment while testing DHCP
+# log-dhcp

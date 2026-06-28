@@ -4,94 +4,74 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"time"
 
 	"tailscale-raspberry-router/handlers"
 )
 
-// Ensure the program is run as root
 func checkRootPrivileges() {
 	if os.Geteuid() != 0 {
 		log.Fatal("This program must be run as root. Try using: sudo ./tailscale-raspberry-router")
 	}
 }
 
-// Ensure Tailscale is installed and running
-func checkTailscaleStatus() {
-	_, err := exec.LookPath("tailscale")
-	if err != nil {
-		log.Fatal("Tailscale is not installed. Please install it using: sudo apt install tailscale")
-	}
-
-	cmd := exec.Command("tailscale", "status")
-	err = cmd.Run()
-	if err != nil {
-		log.Fatal("Tailscale is not running. Start it using: sudo systemctl start tailscaled && sudo tailscale up")
-	}
-
-	log.Println("Tailscale is installed and running.")
-}
-
 func main() {
-	checkRootPrivileges()  // Ensure script is running as root
-	checkTailscaleStatus() // Ensure Tailscale is installed and running
+	checkRootPrivileges()
 
-	// Authentication endpoints (no auth required)
+	http.HandleFunc("/setup", handlers.SetupPageHandler)
+	http.HandleFunc("/setup/status", handlers.SetupStatusHandler)
+	http.HandleFunc("/setup/apply", handlers.SetupApplyHandler)
+
 	http.HandleFunc("/login", handlers.LoginHandler)
 	http.HandleFunc("/logout", handlers.LogoutHandler)
 
-	// Serve static files (CSS, JS, JSON) without authentication
 	fs := http.FileServer(http.Dir("./templates"))
-	http.HandleFunc("/styles.css", func(w http.ResponseWriter, r *http.Request) {
-		fs.ServeHTTP(w, r)
-	})
-	http.HandleFunc("/script.js", func(w http.ResponseWriter, r *http.Request) {
-		fs.ServeHTTP(w, r)
-	})
-	http.HandleFunc("/friendly-names.json", func(w http.ResponseWriter, r *http.Request) {
-		fs.ServeHTTP(w, r)
-	})
+	serveStatic := func(name string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			fs.ServeHTTP(w, r)
+		}
+	}
+	http.HandleFunc("/styles.css", serveStatic("styles.css"))
+	http.HandleFunc("/script.js", serveStatic("script.js"))
+	http.HandleFunc("/setup.js", serveStatic("setup.js"))
+	http.HandleFunc("/friendly-names.json", serveStatic("friendly-names.json"))
 
-	// Protected routes (require authentication)
-	http.HandleFunc("/", handlers.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
-		// Serve index.html when accessing "/"
-		if r.URL.Path == "/" {
-			http.ServeFile(w, r, "./templates/index.html")
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if !handlers.IsConfigured() {
+			http.Redirect(w, r, "/setup", http.StatusSeeOther)
 			return
 		}
-		// Serve other files normally
-		fs.ServeHTTP(w, r)
-	}))
+		handlers.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/" {
+				http.ServeFile(w, r, "./templates/index.html")
+				return
+			}
+			fs.ServeHTTP(w, r)
+		})(w, r)
+	})
 
-	// Protected API Endpoints
 	http.HandleFunc("/status", handlers.RequireAuth(handlers.StatusHandler))
 	http.HandleFunc("/set-mode", handlers.RequireAuth(handlers.SetModeHandler))
 
-	// Debugging: Log available files in the templates directory
-	files, err := os.ReadDir("./templates")
-	if err != nil {
-		log.Fatalf("Error reading templates directory: %v", err)
-	}
-	for _, file := range files {
-		log.Println("Found file:", file.Name())
-	}
-
-	// Start the server in a separate goroutine
 	go func() {
 		log.Println("Starting server on :5000")
-		err := http.ListenAndServe(":5000", nil)
-		if err != nil {
+		if handlers.IsConfigured() {
+			log.Println("Router is configured — dashboard at http://<device-ip>:5000/")
+		} else {
+			log.Println("First boot — open http://<device-ip>:5000/setup to configure")
+		}
+		if err := http.ListenAndServe(":5000", nil); err != nil {
 			log.Fatalf("Server failed: %v", err)
 		}
 	}()
 
-	// Wait for the server to be fully up
-	time.Sleep(3 * time.Second)
+	time.Sleep(2 * time.Second)
 
-	// Restore the previous mode in a separate goroutine
-	go handlers.RestorePreviousMode()
+	if handlers.IsConfigured() {
+		go handlers.RestorePreviousMode()
+	} else {
+		log.Println("Skipping mode restore until first-time setup completes")
+	}
 
-	// Prevent main() from exiting
-	select {} // Block forever (server runs in a goroutine)
+	select {}
 }

@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/gorilla/sessions"
 )
@@ -13,9 +14,10 @@ var (
 	// Session store
 	store *sessions.CookieStore
 
-	// Default credentials (can be overridden by environment variables)
+	// Default credentials (can be overridden by environment variables or setup config)
 	defaultUsername = "admin"
 	defaultPassword = "admin"
+	credentialsMu   sync.RWMutex
 )
 
 func init() {
@@ -51,11 +53,44 @@ func init() {
 	if password := os.Getenv("AUTH_PASSWORD"); password != "" {
 		defaultPassword = password
 	}
+
+	loadCredentialsFromConfig()
+}
+
+func loadCredentialsFromConfig() {
+	cfg := GetRouterConfig()
+	if cfg.AdminUsername != "" {
+		defaultUsername = cfg.AdminUsername
+	}
+	if cfg.AdminPassword != "" {
+		defaultPassword = cfg.AdminPassword
+	}
+}
+
+func SetRuntimeCredentials(username, password string) {
+	credentialsMu.Lock()
+	defer credentialsMu.Unlock()
+	if username != "" {
+		defaultUsername = username
+	}
+	if password != "" {
+		defaultPassword = password
+	}
+}
+
+func getCredentials() (string, string) {
+	credentialsMu.RLock()
+	defer credentialsMu.RUnlock()
+	return defaultUsername, defaultPassword
 }
 
 // LoginHandler handles the login POST request
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
+		if !IsConfigured() {
+			http.Redirect(w, r, "/setup", http.StatusSeeOther)
+			return
+		}
 		// Serve login page
 		http.ServeFile(w, r, "./templates/login.html")
 		return
@@ -76,7 +111,8 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 
 	// Validate credentials
-	if username != defaultUsername || password != defaultPassword {
+	expectedUser, expectedPass := getCredentials()
+	if username != expectedUser || password != expectedPass {
 		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}
@@ -118,6 +154,11 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 // RequireAuth is a middleware that checks if the user is authenticated
 func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !IsConfigured() {
+			http.Redirect(w, r, "/setup", http.StatusSeeOther)
+			return
+		}
+
 		// Allow access to login page and static assets
 		if r.URL.Path == "/login" || r.URL.Path == "/logout" {
 			next(w, r)
@@ -125,7 +166,8 @@ func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// Check for static assets (CSS, JS, etc.)
-		if r.URL.Path == "/styles.css" || r.URL.Path == "/script.js" || r.URL.Path == "/friendly-names.json" {
+		if r.URL.Path == "/styles.css" || r.URL.Path == "/script.js" || r.URL.Path == "/setup.js" ||
+			r.URL.Path == "/friendly-names.json" {
 			next(w, r)
 			return
 		}
