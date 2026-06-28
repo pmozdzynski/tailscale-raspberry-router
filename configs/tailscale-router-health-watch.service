@@ -1,0 +1,14 @@
+[Unit]
+Description=Tailscale Router health monitor
+After=network-online.target tailscale-router.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/router-health-watch.sh
+Restart=always
+RestartSec=10
+Environment=TAILSCALE_HEALTH_INTERVAL=60
+
+[Install]
+WantedBy=multi-user.target

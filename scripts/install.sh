@@ -40,12 +40,26 @@ install_app_files() {
 	cp -r "$REPO_DIR/configs/." "$INSTALL_ROOT/configs/"
 }
 
+install_helper_scripts() {
+	log "Installing helper scripts"
+	for script in update-dns.sh tailscale-dns-watch.sh router-health-check.sh router-health-watch.sh; do
+		install -m 755 "$REPO_DIR/scripts/$script" "/usr/local/bin/$script"
+	done
+}
+
 install_systemd() {
-	log "Installing systemd service"
+	log "Installing systemd services"
 	cp "$REPO_DIR/configs/tailscale-router.service" /etc/systemd/system/tailscale-router.service
+	if [ -f "$REPO_DIR/configs/tailscale-router-health-watch.service" ]; then
+		cp "$REPO_DIR/configs/tailscale-router-health-watch.service" /etc/systemd/system/
+	fi
 	systemctl daemon-reload
 	systemctl enable tailscale-router.service
 	systemctl restart tailscale-router.service
+	if systemctl list-unit-files tailscale-router-health-watch.service >/dev/null 2>&1; then
+		systemctl enable tailscale-router-health-watch.service
+		systemctl restart tailscale-router-health-watch.service
+	fi
 }
 
 print_access_help() {
@@ -72,5 +86,6 @@ print_access_help() {
 }
 
 install_app_files
+install_helper_scripts
 install_systemd
 print_access_help

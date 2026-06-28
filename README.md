@@ -123,6 +123,31 @@ After setup, use the dashboard at `http://<device-ip>:5000/` to switch exit node
 
 To reconfigure from scratch, remove `/etc/tailscale-router/config.json` and restart the service.
 
+### **Watchdog & health monitoring**
+
+After web setup, the bootstrap enables two layers of protection:
+
+| Layer | What it does |
+|-------|----------------|
+| **Health watch** (`tailscale-router-health-watch.service`) | Every 60s checks services, routing, IP forwarding; restarts failed units |
+| **Hardware watchdog** (`watchdog` package) | Reboots the Pi if health checks fail repeatedly (~60s timeout) |
+
+Monitored when configured: `tailscale-router`, `tailscaled`, `dnsmasq`, default route, WAN link up, `net.ipv4.ip_forward`.
+
+Manual check:
+
+```sh
+sudo /usr/local/bin/router-health-check.sh
+echo $?   # 0 = healthy
+sudo systemctl status tailscale-router-health-watch watchdog
+```
+
+Disable hardware watchdog (if needed for debugging):
+
+```sh
+sudo systemctl disable --now watchdog
+```
+
 ---
 
 ### **Manual install**

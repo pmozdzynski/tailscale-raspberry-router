@@ -62,6 +62,8 @@ func ApplyBootstrap(cfg RouterConfig, tailscaleAuthKey string) error {
 		{"configure dnsmasq", func() error { return configureDnsmasq(cfg) }},
 		{"configure Tailscale", func() error { return configureTailscale(cfg, tailscaleAuthKey) }},
 		{"enable DNS watcher", enableDNSWatcher},
+		{"enable health watch", enableHealthWatch},
+		{"enable hardware watchdog", enableHardwareWatchdog},
 	}
 
 	for _, step := range steps {
