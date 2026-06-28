@@ -34,25 +34,76 @@ This project allows:
 
 ## **💻 Installation & Setup**
 
-### **Quick install (recommended)**
+### **Bare device — one command (recommended)**
 
-Assumes **nothing is pre-installed** except a basic Debian/Raspberry Pi OS with network connectivity.
-
-On the device:
+On a **fresh** Raspberry Pi / Debian system with network and `curl` or `wget`, run as root:
 
 ```sh
-git clone https://github.com/pmozdzynski/tailscale-raspberry-router.git
+curl -fsSL https://raw.githubusercontent.com/pmozdzynski/tailscale-raspberry-router/main/scripts/bootstrap-device.sh | sh
+```
+
+Or with `wget`:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/pmozdzynski/tailscale-raspberry-router/main/scripts/bootstrap-device.sh | sh
+```
+
+This script (`scripts/bootstrap-device.sh`) will:
+
+1. Install **git**, **curl**, **ca-certificates**, and **Go** via `apt`
+2. **Clone** this repository to `/opt/tailscale-raspberry-router-src`
+3. **Compile** the binary (auto-detects Pi 1 `GOARM=6`, Pi 2/3 `GOARM=7`, etc.)
+4. Run **`install.sh`** — installs the app and starts the systemd service
+
+At the end it prints URLs like:
+
+```
+http://192.168.x.x:5000/setup
+```
+
+Open that in a browser to finish configuration (WAN/LAN, DHCP, Tailscale auth key, admin password).
+
+> **Note:** The device IP comes from your home router/ISP DHCP and may be unknown beforehand. The script lists every IPv4 address it finds. If none appear yet, connect Ethernet, wait a moment, then run `ip -4 addr show`.
+
+Optional environment variables:
+
+```sh
+REPO_URL=https://github.com/you/fork.git \
+REPO_DIR=/opt/tailscale-raspberry-router-src \
+BRANCH=main \
+  sh bootstrap-device.sh
+```
+
+On very low-memory Pis (Pi 1), enable swap before building if compilation fails:
+
+```sh
+sudo dphys-swapfile swapoff
+sudo sed -i 's/^CONF_SWAPSIZE=.*/CONF_SWAPSIZE=512/' /etc/dphys-swapfile
+sudo dphys-swapfile setup && sudo dphys-swapfile swapon
+```
+
+---
+
+### **Quick install (repo already on device)**
+
+If you already cloned the repo (or copied files via `scp`):
+
+```sh
 cd tailscale-raspberry-router
 
-# Build on your PC, copy binary into repo root (Pi 1 example):
+# Option A — build on another machine, copy binary here (Pi 1 example):
 # GOOS=linux GOARCH=arm GOARM=6 go build -o tailscale-raspberry-router main.go
 
+# Option B — full bootstrap from repo (installs git/go if missing):
+sudo ./scripts/bootstrap-device.sh
+
+# Option C — binary already built, app install only:
 sudo ./scripts/install.sh
 ```
 
 `install.sh` only copies the app and starts the service. **dnsmasq, Tailscale, iptables, and LAN config are installed by the web wizard.**
 
-Open the setup wizard (use any IP shown — WAN IP from ISP/router is auto-detected, not configured):
+Open the setup wizard:
 
 ```
 http://<device-ip>:5000/setup
