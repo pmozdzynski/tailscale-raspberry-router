@@ -185,33 +185,27 @@ func configureDnsmasq(cfg RouterConfig) error {
 		return fmt.Errorf("prepare port 53: %w", err)
 	}
 
+	if err := migrateDnsmasqForRouter(); err != nil {
+		return fmt.Errorf("migrate dnsmasq config: %w", err)
+	}
+
 	netmask := prefixToNetmask(cfg.LANPrefix)
 	conf := fmt.Sprintf(`# Managed by tailscale-raspberry-router
 interface=%s
 bind-interfaces
 listen-address=%s
 except-interface=%s
-
 dhcp-range=%s,%s,%s,%dh
-dhcp-option=3,%s
-dhcp-option=6,%s
-
+dhcp-option=option:router,%s
+dhcp-option=option:dns-server,%s
 no-resolv
 resolv-file=/run/tailscale-router/upstream.conf
-
-cache-size=1000
-domain-needed
-bogus-priv
 `, cfg.LANInterface, cfg.LANAddress, cfg.WANInterface,
 		cfg.DHCPRangeStart, cfg.DHCPRangeEnd, netmask, cfg.DHCPLeaseHours,
 		cfg.LANAddress, cfg.LANAddress)
 
 	path := "/etc/dnsmasq.d/tailscale-router.conf"
 	if err := os.WriteFile(path, []byte(conf), 0644); err != nil {
-		return err
-	}
-
-	if err := ensureDnsmasqMainConfig(); err != nil {
 		return err
 	}
 
@@ -227,19 +221,65 @@ bogus-priv
 	return nil
 }
 
-func ensureDnsmasqMainConfig() error {
-	marker := "conf-dir=/etc/dnsmasq.d"
+func migrateDnsmasqForRouter() error {
+	const backupMain = "/etc/dnsmasq.conf.pre-tailscale-router"
+	const minimalMain = "conf-dir=/etc/dnsmasq.d/,*.conf\n"
+
+	conflictKeys := []string{
+		"interface=", "bind-interfaces", "listen-address=", "except-interface=",
+		"dhcp-range=", "dhcp-option", "no-resolv", "resolv-file=",
+		"cache-size", "domain-needed", "bogus-priv", "port=",
+	}
+
 	data, err := os.ReadFile("/etc/dnsmasq.conf")
-	if err != nil {
-		if os.IsNotExist(err) {
-			return os.WriteFile("/etc/dnsmasq.conf", []byte(marker+",*.conf\n"), 0644)
-		}
+	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	if strings.Contains(string(data), marker) {
+
+	needsMainReplace := false
+	if err == nil {
+		text := string(data)
+		for _, key := range conflictKeys {
+			if strings.Contains(text, key) {
+				needsMainReplace = true
+				break
+			}
+		}
+	}
+
+	if needsMainReplace {
+		log.Println("Bootstrap: backing up /etc/dnsmasq.conf (duplicate keys would break dnsmasq)")
+		_ = os.Rename("/etc/dnsmasq.conf", backupMain)
+		if err := os.WriteFile("/etc/dnsmasq.conf", []byte(minimalMain), 0644); err != nil {
+			return err
+		}
+	} else if os.IsNotExist(err) {
+		if err := os.WriteFile("/etc/dnsmasq.conf", []byte(minimalMain), 0644); err != nil {
+			return err
+		}
+	} else if !strings.Contains(string(data), "conf-dir=/etc/dnsmasq.d") {
+		if err := appendUniqueBlock("/etc/dnsmasq.conf", "conf-dir=/etc/dnsmasq.d",
+			"\n# tailscale-raspberry-router\nconf-dir=/etc/dnsmasq.d/,*.conf\n", func() error { return nil }); err != nil {
+			return err
+		}
+	}
+
+	entries, err := os.ReadDir("/etc/dnsmasq.d")
+	if err != nil {
 		return nil
 	}
-	return appendUniqueBlock("/etc/dnsmasq.conf", marker, "\n# tailscale-raspberry-router\n"+marker+",*.conf\n", func() error { return nil })
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == "tailscale-router.conf" || !strings.HasSuffix(name, ".conf") {
+			continue
+		}
+		src := filepath.Join("/etc/dnsmasq.d", name)
+		dst := src + ".pre-tailscale-router"
+		log.Printf("Bootstrap: disabling extra dnsmasq drop-in %s", name)
+		_ = os.Rename(src, dst)
+	}
+
+	return nil
 }
 
 func prepareDNSPort53() error {
