@@ -164,11 +164,101 @@ async function initSetup() {
   }
 }
 
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function appendLogLine(text, cssClass = "") {
+  const log = document.getElementById("setupLog");
+  const panel = document.getElementById("setupLogPanel");
+  panel.hidden = false;
+  const span = document.createElement("span");
+  if (cssClass) {
+    span.className = cssClass;
+  }
+  span.textContent = text + "\n";
+  log.appendChild(span);
+  log.scrollTop = log.scrollHeight;
+}
+
+function formatLogEvent(evt) {
+  const step = evt.step ? `[${evt.step}] ` : "";
+  return `${step}${evt.detail || evt.status}`;
+}
+
+async function applyWithStream(payload) {
+  const response = await fetch("/setup/apply?stream=1", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok && !response.body) {
+    const text = await response.text();
+    throw new Error(text || "Setup failed");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let failed = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop() || "";
+
+    for (const chunk of chunks) {
+      const line = chunk
+        .split("\n")
+        .find((l) => l.startsWith("data: "));
+      if (!line) {
+        continue;
+      }
+      let evt;
+      try {
+        evt = JSON.parse(line.slice(6));
+      } catch {
+        continue;
+      }
+
+      if (evt.status === "running") {
+        appendLogLine(formatLogEvent(evt), "log-running");
+      } else if (evt.status === "ok") {
+        appendLogLine("✓ " + formatLogEvent(evt), "log-ok");
+      } else if (evt.status === "error") {
+        appendLogLine("✗ " + (evt.detail || evt.step || "error"), "log-error");
+        failed = true;
+      } else if (evt.status === "done") {
+        appendLogLine("✓ " + evt.detail, "log-done");
+        return;
+      }
+    }
+  }
+
+  if (failed) {
+    throw new Error("Setup failed — see log above");
+  }
+}
+
 document.getElementById("setupForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const btn = document.getElementById("applyBtn");
+  const form = document.getElementById("setupForm");
   btn.disabled = true;
   btn.textContent = "Installing...";
+  document.getElementById("setupLog").textContent = "";
+  form.style.opacity = "0.55";
 
   const payload = {
     wan_interface: document.getElementById("wanInterface").value,
@@ -199,25 +289,17 @@ document.getElementById("setupForm").addEventListener("submit", async (event) =>
   }
 
   try {
-    const response = await fetch("/setup/apply", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const text = await response.text();
-    if (!response.ok) {
-      throw new Error(text || "Setup failed");
-    }
-
+    await applyWithStream(payload);
     showNotification("Setup complete — redirecting to login");
     setTimeout(() => {
       window.location.href = "/login";
-    }, 1500);
+    }, 2000);
   } catch (error) {
+    appendLogLine(error.message, "log-error");
     showNotification(error.message, true);
     btn.disabled = false;
     btn.textContent = "Install & Configure";
+    form.style.opacity = "1";
   }
 });
 

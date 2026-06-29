@@ -11,6 +11,11 @@ import (
 
 // ApplyBootstrap configures networking, dnsmasq, Tailscale, and helper scripts.
 func ApplyBootstrap(cfg RouterConfig, tailscaleAuthKey string) error {
+	return ApplyBootstrapWithProgress(cfg, tailscaleAuthKey, nil)
+}
+
+// ApplyBootstrapWithProgress runs bootstrap and streams step updates when progress is set.
+func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progress setupProgressReporter) error {
 	if cfg.LANInterface == "" {
 		return fmt.Errorf("LAN interface is required")
 	}
@@ -68,20 +73,30 @@ func ApplyBootstrap(cfg RouterConfig, tailscaleAuthKey string) error {
 
 	for _, step := range steps {
 		log.Printf("Bootstrap: %s", step.name)
+		progress.running(step.name, "started")
 		if err := step.fn(); err != nil {
+			progress.fail(step.name, err.Error())
 			return fmt.Errorf("%s: %w", step.name, err)
 		}
+		progress.ok(step.name, "completed")
 	}
 
+	progress.running("save configuration", "writing /etc/tailscale-router/config.json")
 	cfg.Configured = true
 	if err := SaveRouterConfig(cfg); err != nil {
+		progress.fail("save configuration", err.Error())
 		return fmt.Errorf("save config: %w", err)
 	}
+	progress.ok("save configuration", "saved")
 
+	progress.running("initial routing", "direct mode + DNS reload")
 	ReloadDnsmasqUpstream()
 
 	if err := DisableTailscaleExitNode(); err != nil {
 		log.Printf("Bootstrap: initial direct mode setup: %v", err)
+		progress.running("initial routing", "warning: "+err.Error())
+	} else {
+		progress.ok("initial routing", "direct mode active")
 	}
 
 	log.Println("Bootstrap completed successfully")
@@ -131,6 +146,8 @@ func ensureWANDHCP(cfg RouterConfig) error {
 }
 
 func configureLANInterface(cfg RouterConfig) error {
+	exec.Command("ip", "link", "set", cfg.LANInterface, "up").Run()
+
 	cidr := fmt.Sprintf("%s/%d", cfg.LANAddress, cfg.LANPrefix)
 
 	if usesNetworkManager() {
@@ -164,10 +181,15 @@ func configureDnsmasq(cfg RouterConfig) error {
 		return err
 	}
 
+	if err := prepareDNSPort53(); err != nil {
+		return fmt.Errorf("prepare port 53: %w", err)
+	}
+
 	netmask := prefixToNetmask(cfg.LANPrefix)
 	conf := fmt.Sprintf(`# Managed by tailscale-raspberry-router
 interface=%s
 bind-interfaces
+listen-address=%s
 except-interface=%s
 
 dhcp-range=%s,%s,%s,%dh
@@ -180,7 +202,7 @@ resolv-file=/run/tailscale-router/upstream.conf
 cache-size=1000
 domain-needed
 bogus-priv
-`, cfg.LANInterface, cfg.WANInterface,
+`, cfg.LANInterface, cfg.LANAddress, cfg.WANInterface,
 		cfg.DHCPRangeStart, cfg.DHCPRangeEnd, netmask, cfg.DHCPLeaseHours,
 		cfg.LANAddress, cfg.LANAddress)
 
@@ -189,18 +211,62 @@ bogus-priv
 		return err
 	}
 
-	enableConf := "conf-dir=/etc/dnsmasq.d/,*.conf\n"
-	if data, err := os.ReadFile("/etc/dnsmasq.conf"); err != nil || !strings.Contains(string(data), "conf-dir=/etc/dnsmasq.d") {
-		if err := os.WriteFile("/etc/dnsmasq.conf", []byte(enableConf), 0644); err != nil {
-			return err
-		}
+	if err := ensureDnsmasqMainConfig(); err != nil {
+		return err
+	}
+
+	if out, err := exec.Command("dnsmasq", "--test").CombinedOutput(); err != nil {
+		return fmt.Errorf("dnsmasq config test failed: %v: %s", err, strings.TrimSpace(string(out)))
 	}
 
 	exec.Command("systemctl", "enable", "dnsmasq").Run()
-	if err := exec.Command("systemctl", "restart", "dnsmasq").Run(); err != nil {
-		return err
+	if out, err := exec.Command("systemctl", "restart", "dnsmasq").CombinedOutput(); err != nil {
+		journal := dnsmasqJournalTail()
+		return fmt.Errorf("systemctl restart dnsmasq: %v: %s%s", err, strings.TrimSpace(string(out)), journal)
 	}
 	return nil
+}
+
+func ensureDnsmasqMainConfig() error {
+	marker := "conf-dir=/etc/dnsmasq.d"
+	data, err := os.ReadFile("/etc/dnsmasq.conf")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return os.WriteFile("/etc/dnsmasq.conf", []byte(marker+",*.conf\n"), 0644)
+		}
+		return err
+	}
+	if strings.Contains(string(data), marker) {
+		return nil
+	}
+	return appendUniqueBlock("/etc/dnsmasq.conf", marker, "\n# tailscale-raspberry-router\n"+marker+",*.conf\n", func() error { return nil })
+}
+
+func prepareDNSPort53() error {
+	out, _ := exec.Command("sh", "-c", "ss -ulnp | grep ':53 ' || true").CombinedOutput()
+	text := string(out)
+	if !strings.Contains(text, "systemd-resolve") && !strings.Contains(text, "127.0.0.53") {
+		return nil
+	}
+
+	log.Println("Bootstrap: disabling systemd-resolved DNS stub on port 53")
+	if err := os.MkdirAll("/etc/systemd/resolved.conf.d", 0755); err != nil {
+		return err
+	}
+	stub := "[Resolve]\nDNSStubListener=no\n"
+	if err := os.WriteFile("/etc/systemd/resolved.conf.d/tailscale-router.conf", []byte(stub), 0644); err != nil {
+		return err
+	}
+	exec.Command("systemctl", "restart", "systemd-resolved").Run()
+	return nil
+}
+
+func dnsmasqJournalTail() string {
+	out, err := exec.Command("journalctl", "-u", "dnsmasq", "-n", "15", "--no-pager").CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	return "\n--- journalctl -u dnsmasq ---\n" + strings.TrimSpace(string(out))
 }
 
 func configureTailscale(cfg RouterConfig, authKey string) error {

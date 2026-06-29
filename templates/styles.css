@@ -183,3 +183,45 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.setup-log-panel {
+  margin-top: 1.5rem;
+  text-align: left;
+}
+
+.setup-log-panel h3 {
+  margin-bottom: 0.5rem;
+}
+
+.setup-log {
+  background: #0d1117;
+  color: #3fb950;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid #30363d;
+  max-height: 420px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.setup-log .log-running {
+  color: #58a6ff;
+}
+
+.setup-log .log-ok {
+  color: #3fb950;
+}
+
+.setup-log .log-error {
+  color: #f85149;
+}
+
+.setup-log .log-done {
+  color: #d2a8ff;
+  font-weight: bold;
+}

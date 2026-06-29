@@ -50,10 +50,33 @@ func SetupApplyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cfg, authKey, err := parseSetupRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	stream := strings.Contains(r.Header.Get("Accept"), "text/event-stream") ||
+		r.URL.Query().Get("stream") == "1"
+
+	if stream {
+		setupApplyStream(w, cfg, authKey)
+		return
+	}
+
+	if err := ApplyBootstrapWithProgress(cfg, authKey, nil); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	SetRuntimeCredentials(cfg.AdminUsername, cfg.AdminPassword)
+	writeSetupOK(w, cfg)
+}
+
+func parseSetupRequest(r *http.Request) (RouterConfig, string, error) {
 	var req setupApplyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
-		return
+		return RouterConfig{}, "", fmt.Errorf("invalid JSON body")
 	}
 
 	cfg := RouterConfig{
@@ -77,10 +100,6 @@ func SetupApplyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if cfg.AdminUsername == "" {
 		cfg.AdminUsername = "admin"
-	}
-
-	if cfg.WANInterface == "" {
-		cfg.WANInterface = strings.TrimSpace(req.WANInterface)
 	}
 	if cfg.WANInterface == "" {
 		iface, err := detectDefaultRouteInterface()
@@ -106,13 +125,45 @@ func SetupApplyHandler(w http.ResponseWriter, r *http.Request) {
 		cfg.TailscaleHost = getSystemHostname()
 	}
 
-	if err := ApplyBootstrap(cfg, strings.TrimSpace(req.TailscaleAuthKey)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	return cfg, strings.TrimSpace(req.TailscaleAuthKey), nil
+}
+
+func setupApplyStream(w http.ResponseWriter, cfg RouterConfig, authKey string) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	send := func(status, step, detail string) {
+		payload, _ := json.Marshal(map[string]string{
+			"status": status,
+			"step":   step,
+			"detail": detail,
+		})
+		fmt.Fprintf(w, "data: %s\n\n", payload)
+		flusher.Flush()
+	}
+
+	progress := setupProgressReporter(func(status, step, detail string) {
+		send(status, step, detail)
+	})
+
+	err := ApplyBootstrapWithProgress(cfg, authKey, progress)
+	if err != nil {
+		send("error", "", err.Error())
 		return
 	}
 
 	SetRuntimeCredentials(cfg.AdminUsername, cfg.AdminPassword)
+	send("done", "", fmt.Sprintf("Router configured. LAN %s on %s. Open /login", cfg.LANAddress, cfg.LANInterface))
+}
 
+func writeSetupOK(w http.ResponseWriter, cfg RouterConfig) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"ok":       true,

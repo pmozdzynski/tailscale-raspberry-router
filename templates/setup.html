@@ -60,7 +60,8 @@
             </label>
             <p class="hint">Required on fresh installs. Create at <a href="https://login.tailscale.com/admin/settings/keys" target="_blank">Tailscale admin</a>.</p>
 
-            <h3>Dashboard Login</h3>
+            <h3>Exit node dashboard login</h3>
+            <p class="hint">Credentials for <strong>http://&lt;device-ip&gt;:5000/</strong> after setup — used to switch exit nodes. Not your Tailscale account.</p>
             <div class="grid-2">
                 <label>Username
                     <input id="adminUser" type="text" value="admin" required>
@@ -73,6 +74,11 @@
             <p class="hint" id="packageStatus"></p>
             <button type="submit" id="applyBtn" class="direct">Install &amp; Configure</button>
         </form>
+
+        <div id="setupLogPanel" class="setup-log-panel" hidden>
+            <h3>Install log</h3>
+            <pre id="setupLog" class="setup-log" aria-live="polite"></pre>
+        </div>
     </div>
 
     <script src="setup.js"></script>
