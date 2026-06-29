@@ -293,7 +293,7 @@ document.getElementById("setupForm").addEventListener("submit", async (event) =>
     showNotification("Setup complete — redirecting to login");
     setTimeout(() => {
       window.location.href = "/login";
-    }, 2000);
+    }, 4000);
   } catch (error) {
     appendLogLine(error.message, "log-error");
     showNotification(error.message, true);

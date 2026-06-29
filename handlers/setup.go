@@ -160,7 +160,13 @@ func setupApplyStream(w http.ResponseWriter, cfg RouterConfig, authKey string) {
 	}
 
 	SetRuntimeCredentials(cfg.AdminUsername, cfg.AdminPassword)
-	send("done", "", fmt.Sprintf("Router configured. LAN %s on %s. Open /login", cfg.LANAddress, cfg.LANInterface))
+
+	ips := getManagementAccessIPs()
+	loginHint := "Open /login with your dashboard username and password"
+	if len(ips) > 0 {
+		loginHint = fmt.Sprintf("Exit node dashboard: http://%s:5000/ (login: %s)", ips[0], cfg.AdminUsername)
+	}
+	send("done", "", fmt.Sprintf("Router configured. LAN %s on %s. %s", cfg.LANAddress, cfg.LANInterface, loginHint))
 }
 
 func writeSetupOK(w http.ResponseWriter, cfg RouterConfig) {
