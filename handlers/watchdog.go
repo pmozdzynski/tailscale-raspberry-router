@@ -57,7 +57,7 @@ func enableHardwareWatchdog() error {
 		log.Println("Installing hardware watchdog package")
 		exec.Command("apt-get", "update").Run()
 		if out, err := exec.Command("apt-get", "install", "-y", "watchdog").CombinedOutput(); err != nil {
-			log.Printf("Could not install watchdog package: %v — %s", err, strings.TrimSpace(string(out)))
+			log.Printf("Could not install watchdog package: %v: %s", err, strings.TrimSpace(string(out)))
 			return nil
 		}
 	}

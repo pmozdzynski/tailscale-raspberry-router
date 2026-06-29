@@ -58,10 +58,10 @@ copy_upstream_from() {
 }
 
 if exit_node_active; then
-	log "Exit node active — using Tailscale DNS (100.100.100.100)"
+	log "Exit node active. Using Tailscale DNS (100.100.100.100)"
 	write_tailscale_upstream
 else
-	log "No exit node — using system upstream resolvers"
+	log "No exit node. Using system upstream resolvers"
 	if copy_upstream_from "$NM_RESOLV"; then
 		:
 	elif copy_upstream_from "$SYSTEM_RESOLV"; then
@@ -83,7 +83,7 @@ if command -v systemctl >/dev/null 2>&1; then
 			exit 1
 		fi
 	else
-		log "dnsmasq is not running — upstream file updated only"
+		log "dnsmasq is not running. Upstream file updated only"
 	fi
 else
 	# OpenRC / no systemd

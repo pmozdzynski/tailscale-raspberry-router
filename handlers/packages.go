@@ -52,7 +52,7 @@ func ensureDnsmasqInstalled() error {
 	}
 
 	if !commandExists("apt-get") {
-		return fmt.Errorf("dnsmasq is not installed (no dnsmasq.service) and apt-get is unavailable — run: apt-get install -y dnsmasq")
+		return fmt.Errorf("dnsmasq is not installed (no dnsmasq.service) and apt-get is unavailable. Run: apt-get install -y dnsmasq")
 	}
 
 	log.Println("Bootstrap: installing dnsmasq package")
@@ -95,7 +95,7 @@ func installSystemPackages() error {
 	}
 
 	if !commandExists("apt-get") {
-		return fmt.Errorf("missing packages %v and apt-get is unavailable — install them manually on this OS", missing)
+		return fmt.Errorf("missing packages %v and apt-get is unavailable. Install them manually on this OS", missing)
 	}
 
 	log.Printf("Bootstrap: installing packages via apt: %v", missing)
@@ -178,7 +178,7 @@ func installTailscaleIfMissing() error {
 		}
 	}
 
-	return fmt.Errorf("could not install Tailscale automatically — install it manually and re-run setup")
+	return fmt.Errorf("could not install Tailscale automatically. Install it manually and re-run setup")
 }
 
 func filterMissingBinaries(packages []string) []string {

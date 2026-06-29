@@ -28,7 +28,7 @@ func ReloadDnsmasqUpstream() {
 	cmd := exec.Command(script)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("update-dns.sh failed: %v — %s", err, string(output))
+		log.Printf("update-dns.sh failed: %v: %s", err, string(output))
 		return
 	}
 	if len(output) > 0 {

@@ -41,7 +41,7 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 	if cfg.WANInterface == "" {
 		iface, err := detectDefaultRouteInterface()
 		if err != nil {
-			return fmt.Errorf("WAN interface not selected and no default route detected — connect WAN and retry")
+			return fmt.Errorf("WAN interface not selected and no default route detected. Connect WAN and retry")
 		}
 		cfg.WANInterface = iface
 	}
@@ -140,7 +140,7 @@ func ensureWANDHCP(cfg RouterConfig) error {
 	if wanIP != "" {
 		log.Printf("Bootstrap: WAN %s uses %s/%d from existing network config (unchanged)", cfg.WANInterface, wanIP, wanPrefix)
 	} else {
-		log.Printf("Bootstrap: WAN %s has no IPv4 yet — DHCP will continue on that interface", cfg.WANInterface)
+		log.Printf("Bootstrap: WAN %s has no IPv4 yet. DHCP will continue on that interface", cfg.WANInterface)
 	}
 	return nil
 }
@@ -315,7 +315,7 @@ func dnsmasqJournalTail() string {
 
 func configureTailscale(cfg RouterConfig, authKey string) error {
 	if _, err := exec.LookPath("tailscale"); err != nil {
-		return fmt.Errorf("tailscale is not installed — bootstrap could not install it automatically")
+		return fmt.Errorf("tailscale is not installed. Bootstrap could not install it automatically")
 	}
 
 	exec.Command("systemctl", "enable", "tailscaled").Run()
@@ -341,7 +341,7 @@ func configureTailscale(cfg RouterConfig, authKey string) error {
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
 		if authKey == "" && strings.Contains(msg, "login") {
-			return fmt.Errorf("tailscale requires login — provide an auth key in setup or run: sudo tailscale up")
+			return fmt.Errorf("tailscale requires login. Provide an auth key in setup or run: sudo tailscale up")
 		}
 		return fmt.Errorf("%v: %s", err, msg)
 	}

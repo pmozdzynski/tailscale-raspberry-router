@@ -10,7 +10,7 @@
     <div id="infoBox" class="info-box"></div>
 
     <div class="container setup-container">
-        <h2>Tailscale Router — First-Time Setup</h2>
+        <h2>Tailscale Router: First-Time Setup</h2>
         <p class="setup-intro">
             Assumes a fresh Linux device. WAN keeps whatever IP your ISP/router assigns via DHCP.
             This wizard installs dnsmasq and Tailscale, then configures LAN routing.
@@ -24,8 +24,8 @@
 
         <form id="setupForm" class="setup-form">
             <h3>Interfaces</h3>
-            <p class="hint">WAN is auto-detected from the default route. Its IP is unknown until DHCP completes — that is expected.</p>
-            <label>WAN interface (internet, DHCP — do not change IP)
+            <p class="hint">WAN is auto-detected from the default route. Its IP is unknown until DHCP completes. That is expected.</p>
+            <label>WAN interface (internet, DHCP, do not change IP)
                 <select id="wanInterface" required></select>
             </label>
             <label>LAN interface (clients)
@@ -61,7 +61,7 @@
             <p class="hint">Required on fresh installs. Create at <a href="https://login.tailscale.com/admin/settings/keys" target="_blank">Tailscale admin</a>.</p>
 
             <h3>Exit node dashboard login</h3>
-            <p class="hint">Credentials for <strong>http://&lt;device-ip&gt;:5000/</strong> after setup — used to switch exit nodes. Not your Tailscale account.</p>
+            <p class="hint">Credentials for <strong>http://&lt;device-ip&gt;:5000/</strong> after setup. Used to switch exit nodes. Not your Tailscale account.</p>
             <div class="grid-2">
                 <label>Username
                     <input id="adminUser" type="text" value="admin" required>

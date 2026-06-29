@@ -34,7 +34,7 @@ This project allows:
 
 ## **💻 Installation & Setup**
 
-### **Bare device — one command (recommended)**
+### **Bare device: one command (recommended)**
 
 On a **fresh** Raspberry Pi / Debian system with network and `curl` or `wget`, run as root:
 
@@ -53,7 +53,7 @@ This script (`scripts/bootstrap-device.sh`) will:
 1. Install **git**, **curl**, **ca-certificates**, and **Go** via `apt`
 2. **Clone** this repository to `/opt/tailscale-raspberry-router-src`
 3. **Compile** the binary (auto-detects Pi 1 `GOARM=6`, Pi 2/3 `GOARM=7`, etc.)
-4. Run **`install.sh`** — installs the app and starts the systemd service
+4. Run **`install.sh`**: installs the app and starts the systemd service
 
 At the end it prints URLs like:
 
@@ -91,13 +91,13 @@ If you already cloned the repo (or copied files via `scp`):
 ```sh
 cd tailscale-raspberry-router
 
-# Option A — build on another machine, copy binary here (Pi 1 example):
+# Option A: build on another machine, copy binary here (Pi 1 example):
 # GOOS=linux GOARCH=arm GOARM=6 go build -o tailscale-raspberry-router main.go
 
-# Option B — full bootstrap from repo (installs git/go if missing):
+# Option B: full bootstrap from repo (installs git/go if missing):
 sudo ./scripts/bootstrap-device.sh
 
-# Option C — binary already built, app install only:
+# Option C: binary already built, app install only:
 sudo ./scripts/install.sh
 ```
 
@@ -310,7 +310,7 @@ LAN clients should use the Pi as DNS (`192.168.50.1`). The Pi forwards upstream 
 If you already use NetworkManager on Debian 13, change **one line** in `/etc/dnsmasq.conf`:
 
 ```
-# Before (ISP DNS only — won't follow exit node in Mode 2):
+# Before (ISP DNS only; won't follow exit node in Mode 2):
 # resolv-file=/run/NetworkManager/no-stub-resolv.conf
 
 # After:

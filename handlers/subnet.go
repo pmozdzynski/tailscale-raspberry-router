@@ -65,11 +65,11 @@ func SuggestLANSubnet(wanInterface string) SuggestedLANConfig {
 				return c
 			}
 		}
-		suggestion.Reason = fmt.Sprintf("WAN uses %s/%d — picked fallback subnet; verify before apply", wanIP, wanPrefix)
+		suggestion.Reason = fmt.Sprintf("WAN uses %s/%d. Picked fallback subnet; verify before apply", wanIP, wanPrefix)
 	} else if wanInterface != "" {
-		suggestion.Reason = fmt.Sprintf("WAN %s has no IPv4 yet (DHCP pending) — safe default LAN subnet", wanInterface)
+		suggestion.Reason = fmt.Sprintf("WAN %s has no IPv4 yet (DHCP pending). Safe default LAN subnet", wanInterface)
 	} else {
-		suggestion.Reason = "No default route detected — safe default LAN subnet"
+		suggestion.Reason = "No default route detected. Safe default LAN subnet"
 	}
 
 	return suggestion
@@ -106,7 +106,7 @@ func validateLANDoesNotOverlapWAN(wanIface, lanAddr string, lanPrefix int) error
 		return nil
 	}
 	if subnetsOverlap(wanIP, wanPrefix, lanAddr, lanPrefix) {
-		return fmt.Errorf("LAN %s/%d overlaps WAN %s/%d on %s — choose a different LAN subnet",
+		return fmt.Errorf("LAN %s/%d overlaps WAN %s/%d on %s. Choose a different LAN subnet",
 			lanAddr, lanPrefix, wanIP, wanPrefix, wanIface)
 	}
 	return nil

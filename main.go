@@ -56,9 +56,9 @@ func main() {
 	go func() {
 		log.Println("Starting server on :5000")
 		if handlers.IsConfigured() {
-			log.Println("Router is configured — dashboard at http://<device-ip>:5000/")
+			log.Println("Router is configured. Dashboard at http://<device-ip>:5000/")
 		} else {
-			log.Println("First boot — open http://<device-ip>:5000/setup to configure")
+			log.Println("First boot. Open http://<device-ip>:5000/setup to configure")
 		}
 		if err := http.ListenAndServe(":5000", nil); err != nil {
 			log.Fatalf("Server failed: %v", err)

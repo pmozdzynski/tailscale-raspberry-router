@@ -76,7 +76,7 @@ check_ip_forwarding() {
 	if [ "$val" = "1" ]; then
 		return 0
 	fi
-	log "IP forwarding disabled — enabling"
+	log "IP forwarding disabled, enabling"
 	sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
 }
 

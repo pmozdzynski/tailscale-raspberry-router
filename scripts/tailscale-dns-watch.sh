@@ -29,7 +29,7 @@ while true; do
 	sleep "$INTERVAL"
 	current="$(hash_state)"
 	if [ "$current" != "$last" ]; then
-		logger -t tailscale-router-dns "Tailscale state changed — updating DNS"
+		logger -t tailscale-router-dns "Tailscale state changed, updating DNS"
 		"$UPDATE_DNS"
 		last="$current"
 	fi

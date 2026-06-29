@@ -1,5 +1,5 @@
 #!/bin/sh
-# Periodic health monitor — restarts failed services before hardware watchdog reboots.
+# Periodic health monitor. Restarts failed services before hardware watchdog reboots.
 set -eu
 
 CHECK="/usr/local/bin/router-health-check.sh"

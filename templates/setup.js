@@ -18,7 +18,7 @@ function renderInterfaceOption(select, iface, selectedName) {
   option.value = iface.name;
   const ips = iface.ipv4?.length ? iface.ipv4.join(", ") : "DHCP / none yet";
   const route = iface.is_default_route ? ", default route" : "";
-  option.textContent = `${iface.name} (${iface.kind}, ${iface.state}${route}) — ${ips}`;
+  option.textContent = `${iface.name} (${iface.kind}, ${iface.state}${route}): ${ips}`;
   if (iface.name === selectedName) {
     option.selected = true;
   }
@@ -34,7 +34,7 @@ function renderNetworkSummary(snapshot) {
   const wanIPs = wan?.ipv4?.length ? wan.ipv4.join(", ") : "not assigned yet (DHCP)";
 
   const lines = [
-    `Default route: ${routes.default_interface || "none — connect WAN cable"} via ${routes.default_gateway || "n/a"}`,
+    `Default route: ${routes.default_interface || "none, connect WAN cable"} via ${routes.default_gateway || "n/a"}`,
     `WAN address: ${wanIPs}`,
     `IP forwarding: ${routes.ip_forwarding ? "enabled" : "will be enabled"}`,
     `Packages: dnsmasq=${pkgs.dnsmasq ? "yes" : "will install"}, tailscale=${pkgs.tailscale ? "yes" : "will install"}, apt=${pkgs.apt_available ? "yes" : "no"}`,
@@ -247,7 +247,7 @@ async function applyWithStream(payload) {
   }
 
   if (failed) {
-    throw new Error("Setup failed — see log above");
+    throw new Error("Setup failed. See log above");
   }
 }
 
@@ -290,7 +290,7 @@ document.getElementById("setupForm").addEventListener("submit", async (event) =>
 
   try {
     await applyWithStream(payload);
-    showNotification("Setup complete — redirecting to login");
+    showNotification("Setup complete. Redirecting to login");
     setTimeout(() => {
       window.location.href = "/login";
     }, 4000);
