@@ -177,6 +177,10 @@ func configureLANInterface(cfg RouterConfig) error {
 }
 
 func configureDnsmasq(cfg RouterConfig) error {
+	if err := ensureDnsmasqInstalled(); err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll("/etc/dnsmasq.d", 0755); err != nil {
 		return err
 	}

@@ -20,10 +20,58 @@ type PackageSnapshot struct {
 func GetPackageSnapshot() PackageSnapshot {
 	return PackageSnapshot{
 		AptAvailable: commandExists("apt-get"),
-		Dnsmasq:      commandExists("dnsmasq"),
+		Dnsmasq:      isDnsmasqInstalled(),
 		Tailscale:    commandExists("tailscale"),
 		Iptables:     commandExists("iptables"),
 	}
+}
+
+func isDnsmasqInstalled() bool {
+	return isDnsmasqPackageInstalled() && dnsmasqServiceExists()
+}
+
+func isDnsmasqPackageInstalled() bool {
+	out, err := exec.Command("dpkg-query", "-W", "-f=${Status}", "dnsmasq").Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "install ok installed")
+}
+
+func dnsmasqServiceExists() bool {
+	out, err := exec.Command("systemctl", "list-unit-files", "dnsmasq.service", "--no-pager", "--no-legend").Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "dnsmasq.service")
+}
+
+func ensureDnsmasqInstalled() error {
+	if isDnsmasqInstalled() {
+		return nil
+	}
+
+	if !commandExists("apt-get") {
+		return fmt.Errorf("dnsmasq is not installed (no dnsmasq.service) and apt-get is unavailable — run: apt-get install -y dnsmasq")
+	}
+
+	log.Println("Bootstrap: installing dnsmasq package")
+	if out, err := exec.Command("apt-get", "update").CombinedOutput(); err != nil {
+		return fmt.Errorf("apt-get update before dnsmasq: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+
+	out, err := exec.Command("apt-get", "install", "-y", "dnsmasq").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("apt-get install dnsmasq: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+
+	exec.Command("systemctl", "daemon-reload").Run()
+
+	if !isDnsmasqInstalled() {
+		return fmt.Errorf("dnsmasq install finished but dnsmasq.service is still missing: %s", strings.TrimSpace(string(out)))
+	}
+
+	return nil
 }
 
 func installSystemPackages() error {
@@ -36,9 +84,14 @@ func installSystemPackages() error {
 	}
 
 	missing := filterMissingBinaries(required)
-	if len(missing) == 0 {
+	if len(missing) == 0 && isDnsmasqInstalled() {
 		log.Println("Bootstrap: all required packages already present")
 		return nil
+	}
+
+	// dnsmasq may have a binary but no systemd unit if install was incomplete
+	if !isDnsmasqInstalled() {
+		missing = appendUniquePackage(missing, "dnsmasq")
 	}
 
 	if !commandExists("apt-get") {
@@ -148,6 +201,15 @@ func filterMissingBinaries(packages []string) []string {
 		}
 	}
 	return missing
+}
+
+func appendUniquePackage(list []string, pkg string) []string {
+	for _, existing := range list {
+		if existing == pkg {
+			return list
+		}
+	}
+	return append(list, pkg)
 }
 
 func commandExists(name string) bool {
