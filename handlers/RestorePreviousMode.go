@@ -11,6 +11,10 @@ import (
 func RestorePreviousMode() {
 	log.Println("Checking saved mode on startup...")
 
+	if IsConfigured() {
+		ApplyLocalPolicyRouting(GetRouterConfig())
+	}
+
 	// Ensure exit nodes are available before restoring mode
 	for i := 0; i < 10; i++ { // Try for 10 seconds
 		nodes, err := GetExitNodes()

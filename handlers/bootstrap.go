@@ -104,7 +104,10 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 }
 
 func enableIPForwarding() error {
-	if err := os.WriteFile("/etc/sysctl.d/99-tailscale-router.conf", []byte("net.ipv4.ip_forward=1\n"), 0644); err != nil {
+	sysctl := "net.ipv4.ip_forward=1\n" +
+		"net.ipv4.conf.all.rp_filter=2\n" +
+		"net.ipv4.conf.default.rp_filter=2\n"
+	if err := os.WriteFile("/etc/sysctl.d/99-tailscale-router.conf", []byte(sysctl), 0644); err != nil {
 		return err
 	}
 	return exec.Command("sysctl", "-p", "/etc/sysctl.d/99-tailscale-router.conf").Run()
@@ -326,8 +329,8 @@ func configureTailscale(cfg RouterConfig, authKey string) error {
 	args := []string{
 		"up",
 		"--advertise-exit-node=false",
-		"--accept-routes",
-		"--accept-dns",
+		"--accept-routes=false",
+		"--accept-dns=false",
 		"--hostname=" + cfg.TailscaleHost,
 	}
 	if authKey != "" {
@@ -345,6 +348,8 @@ func configureTailscale(cfg RouterConfig, authKey string) error {
 		}
 		return fmt.Errorf("%v: %s", err, msg)
 	}
+
+	ApplyLocalPolicyRouting(cfg)
 	return nil
 }
 

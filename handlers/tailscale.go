@@ -159,9 +159,7 @@ func SetTailscaleExitNode(node string) error {
 		return fmt.Errorf("exit node not found")
 	}
 
-	// Flush existing NAT and FORWARD rules
-	exec.Command("iptables", "-t", "nat", "-F").Run()
-	exec.Command("iptables", "-F", "FORWARD").Run()
+	flushRouterIPTablesRules()
 
 	// Enable IP forwarding
 	exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1").Run()
@@ -184,26 +182,20 @@ func SetTailscaleExitNode(node string) error {
 	// Apply NAT masquerading on tailscale0 for LAN clients
 	log.Println("Using tailscale0 interface for NAT (exit node mode)")
 
-	// NAT masquerading for traffic going out through tailscale0
-	exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-o", "tailscale0", "-j", "MASQUERADE").Run()
+	appendRouterNatMasquerade("tailscale0")
 
 	// Get LAN interfaces and set up forwarding rules
 	lanInterfaces, err := GetLANInterfaces()
 	if err != nil {
 		log.Printf("Warning: Could not detect LAN interfaces: %v", err)
 		log.Println("Using permissive forwarding rules (allowing all interfaces)")
-		// Allow forwarding from any interface to tailscale0 (NEW and ESTABLISHED connections)
-		exec.Command("iptables", "-A", "FORWARD", "-o", "tailscale0", "-m", "state", "--state", "NEW,RELATED,ESTABLISHED", "-j", "ACCEPT").Run()
-		// Allow return traffic from tailscale0
-		exec.Command("iptables", "-A", "FORWARD", "-i", "tailscale0", "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT").Run()
+		appendRouterForwardRule("-o", "tailscale0", "-m", "state", "--state", "NEW,RELATED,ESTABLISHED", "-j", "ACCEPT")
+		appendRouterForwardRule("-i", "tailscale0", "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT")
 	} else {
-		// Set up forwarding rules for each LAN interface
 		for _, lanIface := range lanInterfaces {
 			log.Printf("Setting up forwarding from %s to tailscale0", lanIface)
-			// Allow forwarding from LAN interface to tailscale0 (NEW and ESTABLISHED connections)
-			exec.Command("iptables", "-A", "FORWARD", "-i", lanIface, "-o", "tailscale0", "-m", "state", "--state", "NEW,RELATED,ESTABLISHED", "-j", "ACCEPT").Run()
-			// Allow return traffic from tailscale0 to LAN interface
-			exec.Command("iptables", "-A", "FORWARD", "-i", "tailscale0", "-o", lanIface, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT").Run()
+			appendRouterForwardRule("-i", lanIface, "-o", "tailscale0", "-m", "state", "--state", "NEW,RELATED,ESTABLISHED", "-j", "ACCEPT")
+			appendRouterForwardRule("-i", "tailscale0", "-o", lanIface, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT")
 		}
 	}
 
@@ -225,9 +217,7 @@ func DisableTailscaleExitNode() error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// Flush existing NAT and FORWARD rules
-	exec.Command("iptables", "-t", "nat", "-F").Run()
-	exec.Command("iptables", "-F", "FORWARD").Run()
+	flushRouterIPTablesRules()
 
 	err := exec.Command("tailscale", "set", "--exit-node=").Run()
 	if err != nil {
@@ -250,26 +240,19 @@ func DisableTailscaleExitNode() error {
 
 	log.Println("Using interface for NAT:", interfaceName) // Log to stderr
 
-	// Apply NAT masquerading using the detected interface
-	exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-o", interfaceName, "-j", "MASQUERADE").Run()
+	appendRouterNatMasquerade(interfaceName)
 
-	// Get LAN interfaces and set up forwarding rules
 	lanInterfaces, err := GetLANInterfaces()
 	if err != nil {
 		log.Printf("Warning: Could not detect LAN interfaces: %v", err)
 		log.Println("Using permissive forwarding rules (allowing all interfaces)")
-		// Allow forwarding from any interface to WAN (NEW and ESTABLISHED connections)
-		exec.Command("iptables", "-A", "FORWARD", "-o", interfaceName, "-m", "state", "--state", "NEW,RELATED,ESTABLISHED", "-j", "ACCEPT").Run()
-		// Allow return traffic from WAN
-		exec.Command("iptables", "-A", "FORWARD", "-i", interfaceName, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT").Run()
+		appendRouterForwardRule("-o", interfaceName, "-m", "state", "--state", "NEW,RELATED,ESTABLISHED", "-j", "ACCEPT")
+		appendRouterForwardRule("-i", interfaceName, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT")
 	} else {
-		// Set up forwarding rules for each LAN interface
 		for _, lanIface := range lanInterfaces {
 			log.Printf("Setting up forwarding from %s to %s", lanIface, interfaceName)
-			// Allow forwarding from LAN interface to WAN interface (NEW and ESTABLISHED connections)
-			exec.Command("iptables", "-A", "FORWARD", "-i", lanIface, "-o", interfaceName, "-m", "state", "--state", "NEW,RELATED,ESTABLISHED", "-j", "ACCEPT").Run()
-			// Allow return traffic from WAN to LAN interface
-			exec.Command("iptables", "-A", "FORWARD", "-i", interfaceName, "-o", lanIface, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT").Run()
+			appendRouterForwardRule("-i", lanIface, "-o", interfaceName, "-m", "state", "--state", "NEW,RELATED,ESTABLISHED", "-j", "ACCEPT")
+			appendRouterForwardRule("-i", interfaceName, "-o", lanIface, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT")
 		}
 	}
 
