@@ -68,21 +68,11 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 		{"configure Tailscale", func() error { return configureTailscale(cfg, tailscaleAuthKey) }},
 		{"enable DNS watcher", enableDNSWatcher},
 		{"enable health watch", enableHealthWatch},
-		{"enable hardware watchdog", func() error { return nil }},
 	}
 
 	for _, step := range steps {
 		log.Printf("Bootstrap: %s", step.name)
 		progress.running(step.name, "started")
-
-		if step.name == "enable hardware watchdog" {
-			if warn := enableHardwareWatchdog(); warn != "" {
-				log.Printf("Bootstrap: hardware watchdog: %s", warn)
-				progress.warn(step.name, warn)
-			}
-			progress.ok(step.name, "completed")
-			continue
-		}
 
 		if err := step.fn(); err != nil {
 			progress.fail(step.name, err.Error())
@@ -101,6 +91,14 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 
 	if err := applyInitialRouting(cfg, progress); err != nil {
 		return fmt.Errorf("initial routing: %w", err)
+	}
+
+	progress.running("enable hardware watchdog", "started")
+	if warn := enableHardwareWatchdog(); warn != "" {
+		log.Printf("Bootstrap: hardware watchdog: %s", warn)
+		progress.warn("enable hardware watchdog", warn)
+	} else {
+		progress.ok("enable hardware watchdog", "completed")
 	}
 
 	log.Println("Bootstrap completed successfully")

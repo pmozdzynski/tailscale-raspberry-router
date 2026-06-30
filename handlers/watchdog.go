@@ -11,8 +11,9 @@ import (
 
 func enableHealthWatch() error {
 	scripts := map[string]string{
-		"router-health-check.sh": "/usr/local/bin/router-health-check.sh",
-		"router-health-watch.sh": "/usr/local/bin/router-health-watch.sh",
+		"router-health-check.sh":  "/usr/local/bin/router-health-check.sh",
+		"router-health-watch.sh":  "/usr/local/bin/router-health-watch.sh",
+		"router-watchdog-test.sh": "/usr/local/bin/router-watchdog-test.sh",
 	}
 	srcDir := ScriptsDir()
 
@@ -59,6 +60,13 @@ func enableHardwareWatchdog() string {
 		return "no /dev/watchdog on this board (optional hardware watchdog skipped)"
 	}
 
+	// Install lite test script (may already exist from health watch step).
+	srcDir := ScriptsDir()
+	testSrc := filepath.Join(srcDir, "router-watchdog-test.sh")
+	if data, err := os.ReadFile(testSrc); err == nil {
+		_ = os.WriteFile("/usr/local/bin/router-watchdog-test.sh", data, 0755)
+	}
+
 	confSrc := findConfigFile("watchdog-tailscale-router.conf")
 	if confSrc == "" {
 		return "watchdog config template not found (skipped)"
@@ -69,9 +77,20 @@ func enableHardwareWatchdog() string {
 		return fmt.Sprintf("read watchdog config: %v", err)
 	}
 
-	marker := "test-binary = /usr/local/bin/router-health-check.sh"
-	if err := appendUniqueBlock("/etc/watchdog.conf", marker, "\n# tailscale-raspberry-router\n"+string(confData), func() error { return nil }); err != nil {
-		return fmt.Sprintf("update watchdog.conf: %v", err)
+	// Prefer drop-in dir so we do not duplicate keys in /etc/watchdog.conf.
+	if err := os.MkdirAll("/etc/watchdog.d", 0755); err == nil {
+		if err := os.WriteFile("/etc/watchdog.d/tailscale-router", confData, 0644); err != nil {
+			return fmt.Sprintf("write /etc/watchdog.d/tailscale-router: %v", err)
+		}
+	} else {
+		marker := "test-binary = /usr/local/bin/router-watchdog-test.sh"
+		if err := appendUniqueBlock("/etc/watchdog.conf", marker, "\n# tailscale-raspberry-router\n"+string(confData), func() error { return nil }); err != nil {
+			return fmt.Sprintf("update watchdog.conf: %v", err)
+		}
+	}
+
+	if out, err := exec.Command("/usr/local/bin/router-watchdog-test.sh").CombinedOutput(); err != nil {
+		return fmt.Sprintf("watchdog preflight check failed: %v: %s (skipped starting hardware watchdog)", err, strings.TrimSpace(string(out)))
 	}
 
 	exec.Command("systemctl", "daemon-reload").Run()
