@@ -67,6 +67,10 @@ func main() {
 
 	time.Sleep(2 * time.Second)
 
+	if err := handlers.EnsureIPForwarding(); err != nil {
+		log.Printf("Warning: IP forwarding: %v", err)
+	}
+
 	if handlers.IsConfigured() {
 		go handlers.RestorePreviousMode()
 	} else {

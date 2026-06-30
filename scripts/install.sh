@@ -42,7 +42,7 @@ install_app_files() {
 
 install_helper_scripts() {
 	log "Installing helper scripts"
-	for script in update-dns.sh tailscale-dns-watch.sh router-health-check.sh router-health-watch.sh; do
+	for script in update-dns.sh tailscale-dns-watch.sh router-health-check.sh router-health-watch.sh bootstrap-verify.sh; do
 		install -m 755 "$REPO_DIR/scripts/$script" "/usr/local/bin/$script"
 	done
 }

@@ -268,11 +268,7 @@ func classifyInterface(name, linkType string) string {
 }
 
 func isIPForwardingEnabled() bool {
-	output, err := exec.Command("sysctl", "-n", "net.ipv4.ip_forward").Output()
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(string(output)) == "1"
+	return IsIPForwardingEnabled()
 }
 
 func getTailscaleSnapshot() TailscaleSnapshot {

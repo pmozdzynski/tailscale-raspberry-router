@@ -236,6 +236,8 @@ async function applyWithStream(payload) {
         appendLogLine(formatLogEvent(evt), "log-running");
       } else if (evt.status === "ok") {
         appendLogLine("✓ " + formatLogEvent(evt), "log-ok");
+      } else if (evt.status === "warn") {
+        appendLogLine("! " + formatLogEvent(evt), "log-warn");
       } else if (evt.status === "error") {
         appendLogLine("✗ " + (evt.detail || evt.step || "error"), "log-error");
         failed = true;

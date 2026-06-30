@@ -108,7 +108,27 @@ func installSystemPackages() error {
 		return fmt.Errorf("apt-get install: %v: %s", err, strings.TrimSpace(string(out)))
 	}
 
+	installOptionalPackage("watchdog")
 	return nil
+}
+
+func installOptionalPackage(pkg string) {
+	if isPackageInstalled(pkg) {
+		return
+	}
+	log.Printf("Bootstrap: installing optional package %s", pkg)
+	out, err := exec.Command("apt-get", "install", "-y", pkg).CombinedOutput()
+	if err != nil {
+		log.Printf("Bootstrap: optional package %s not installed: %v: %s", pkg, err, strings.TrimSpace(string(out)))
+	}
+}
+
+func isPackageInstalled(pkg string) bool {
+	out, err := exec.Command("dpkg-query", "-W", "-f=${Status}", pkg).Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "install ok installed")
 }
 
 func installTailscaleIfMissing() error {

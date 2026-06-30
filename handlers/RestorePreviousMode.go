@@ -11,6 +11,10 @@ import (
 func RestorePreviousMode() {
 	log.Println("Checking saved mode on startup...")
 
+	if err := EnsureIPForwarding(); err != nil {
+		log.Printf("Warning: IP forwarding: %v", err)
+	}
+
 	if IsConfigured() {
 		ApplyLocalPolicyRouting(GetRouterConfig())
 	}

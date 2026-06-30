@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -60,4 +61,44 @@ func ensureIPRule(priority int, fromCIDR, toCIDR string) {
 	} else {
 		log.Printf("policy routing: local traffic %s -> %s uses main table", fromCIDR, toCIDR)
 	}
+}
+
+const ipForwardSysctlPath = "/etc/sysctl.d/99-tailscale-router.conf"
+
+var ipForwardSettings = map[string]string{
+	"net.ipv4.ip_forward":              "1",
+	"net.ipv4.conf.all.forwarding":     "1",
+	"net.ipv4.conf.default.forwarding": "1",
+	"net.ipv4.conf.all.rp_filter":      "2",
+	"net.ipv4.conf.default.rp_filter":  "2",
+}
+
+// EnsureIPForwarding enables IPv4 routing and persists it across reboots.
+func EnsureIPForwarding() error {
+	var sysctlLines strings.Builder
+	for key, val := range ipForwardSettings {
+		fmt.Fprintf(&sysctlLines, "%s=%s\n", key, val)
+		if out, err := exec.Command("sysctl", "-w", key+"="+val).CombinedOutput(); err != nil {
+			log.Printf("sysctl -w %s=%s: %v: %s", key, val, err, strings.TrimSpace(string(out)))
+		}
+	}
+
+	if err := os.WriteFile(ipForwardSysctlPath, []byte(sysctlLines.String()), 0644); err != nil {
+		return err
+	}
+	exec.Command("sysctl", "-p", ipForwardSysctlPath).Run()
+
+	if !IsIPForwardingEnabled() {
+		return fmt.Errorf("net.ipv4.ip_forward is still disabled after enable attempt")
+	}
+	return nil
+}
+
+// IsIPForwardingEnabled reports whether the kernel will route between interfaces.
+func IsIPForwardingEnabled() bool {
+	output, err := exec.Command("sysctl", "-n", "net.ipv4.ip_forward").Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(output)) == "1"
 }

@@ -68,12 +68,22 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 		{"configure Tailscale", func() error { return configureTailscale(cfg, tailscaleAuthKey) }},
 		{"enable DNS watcher", enableDNSWatcher},
 		{"enable health watch", enableHealthWatch},
-		{"enable hardware watchdog", enableHardwareWatchdog},
+		{"enable hardware watchdog", func() error { return nil }},
 	}
 
 	for _, step := range steps {
 		log.Printf("Bootstrap: %s", step.name)
 		progress.running(step.name, "started")
+
+		if step.name == "enable hardware watchdog" {
+			if warn := enableHardwareWatchdog(); warn != "" {
+				log.Printf("Bootstrap: hardware watchdog: %s", warn)
+				progress.warn(step.name, warn)
+			}
+			progress.ok(step.name, "completed")
+			continue
+		}
+
 		if err := step.fn(); err != nil {
 			progress.fail(step.name, err.Error())
 			return fmt.Errorf("%s: %w", step.name, err)
@@ -89,28 +99,44 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 	}
 	progress.ok("save configuration", "saved")
 
-	progress.running("initial routing", "direct mode + DNS reload")
-	ReloadDnsmasqUpstream()
-
-	if err := DisableTailscaleExitNode(); err != nil {
-		log.Printf("Bootstrap: initial direct mode setup: %v", err)
-		progress.running("initial routing", "warning: "+err.Error())
-	} else {
-		progress.ok("initial routing", "direct mode active")
+	if err := applyInitialRouting(cfg, progress); err != nil {
+		return fmt.Errorf("initial routing: %w", err)
 	}
 
 	log.Println("Bootstrap completed successfully")
 	return nil
 }
 
-func enableIPForwarding() error {
-	sysctl := "net.ipv4.ip_forward=1\n" +
-		"net.ipv4.conf.all.rp_filter=2\n" +
-		"net.ipv4.conf.default.rp_filter=2\n"
-	if err := os.WriteFile("/etc/sysctl.d/99-tailscale-router.conf", []byte(sysctl), 0644); err != nil {
+func applyInitialRouting(cfg RouterConfig, progress setupProgressReporter) error {
+	progress.running("initial routing", "direct mode + DNS reload")
+
+	ApplyLocalPolicyRouting(cfg)
+	if err := EnsureIPForwarding(); err != nil {
+		progress.warn("initial routing", "IP forwarding: "+err.Error())
+	}
+
+	ReloadDnsmasqUpstream()
+
+	mu.Lock()
+	flushRouterIPTablesRules()
+	if err := clearTailscaleExitNode(); err != nil {
+		log.Printf("Bootstrap: clear exit node (non-fatal): %v", err)
+		progress.warn("initial routing", err.Error())
+	}
+	err := applyDirectModeRouting()
+	mu.Unlock()
+
+	if err != nil {
+		progress.fail("initial routing", err.Error())
 		return err
 	}
-	return exec.Command("sysctl", "-p", "/etc/sysctl.d/99-tailscale-router.conf").Run()
+
+	progress.ok("initial routing", "direct mode active (NAT, forwarding, DNS)")
+	return nil
+}
+
+func enableIPForwarding() error {
+	return EnsureIPForwarding()
 }
 
 func installHelperScripts() error {
@@ -118,6 +144,7 @@ func installHelperScripts() error {
 	targets := map[string]string{
 		"update-dns.sh":          "/usr/local/bin/update-dns.sh",
 		"tailscale-dns-watch.sh": "/usr/local/bin/tailscale-dns-watch.sh",
+		"bootstrap-verify.sh":    "/usr/local/bin/bootstrap-verify.sh",
 	}
 
 	for name, dest := range targets {

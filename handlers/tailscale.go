@@ -162,7 +162,9 @@ func SetTailscaleExitNode(node string) error {
 	flushRouterIPTablesRules()
 
 	// Enable IP forwarding
-	exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1").Run()
+	if err := EnsureIPForwarding(); err != nil {
+		log.Printf("Warning: IP forwarding: %v", err)
+	}
 
 	// Ensure connection tracking modules are loaded
 	exec.Command("modprobe", "nf_conntrack").Run()
@@ -212,33 +214,47 @@ func SetTailscaleExitNode(node string) error {
 	return nil
 }
 
-// Disable Tailscale exit node
+// Disable Tailscale exit node and route LAN clients directly via WAN.
 func DisableTailscaleExitNode() error {
 	mu.Lock()
 	defer mu.Unlock()
 
 	flushRouterIPTablesRules()
 
-	err := exec.Command("tailscale", "set", "--exit-node=").Run()
-	if err != nil {
-		return err
+	if err := clearTailscaleExitNode(); err != nil {
+		log.Printf("Warning: could not clear Tailscale exit node: %v", err)
 	}
 
-	// Enable IP forwarding
-	exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1").Run()
+	return applyDirectModeRouting()
+}
 
-	// Ensure connection tracking modules are loaded
+func clearTailscaleExitNode() error {
+	out, err := exec.Command("tailscale", "set", "--exit-node=").CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	msg := strings.ToLower(strings.TrimSpace(string(out)))
+	if strings.Contains(msg, "not using") || strings.Contains(msg, "no exit") {
+		return nil
+	}
+	return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
+}
+
+func applyDirectModeRouting() error {
+	if err := EnsureIPForwarding(); err != nil {
+		log.Printf("Warning: IP forwarding: %v", err)
+	}
+
 	exec.Command("modprobe", "nf_conntrack").Run()
 	exec.Command("modprobe", "nf_conntrack_ipv4").Run()
 
-	// Detect the active internet interface
 	interfaceName, err := GetActiveInternetInterface()
 	if err != nil {
 		log.Println("Error detecting active interface, defaulting to eth0")
 		interfaceName = "eth0"
 	}
 
-	log.Println("Using interface for NAT:", interfaceName) // Log to stderr
+	log.Println("Using interface for NAT:", interfaceName)
 
 	appendRouterNatMasquerade(interfaceName)
 
@@ -257,14 +273,11 @@ func DisableTailscaleExitNode() error {
 	}
 
 	go sendArpPing("1.1.1.1")
-
-	// Speed up routing changes by flushing caches and sending ARP announcements
 	speedUpRoutingChanges()
 
 	CurrentMode = "direct"
 	SaveMode(CurrentMode)
 
 	ReloadDnsmasqUpstream()
-
 	return nil
 }

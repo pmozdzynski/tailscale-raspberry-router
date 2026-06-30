@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -44,49 +45,63 @@ func enableHealthWatch() error {
 	return exec.Command("systemctl", "restart", "tailscale-router-health-watch.service").Run()
 }
 
-func enableHardwareWatchdog() error {
-	// Raspberry Pi / BCM watchdog module
+// enableHardwareWatchdog configures the Pi hardware watchdog when available.
+// Returns a non-empty warning string on partial failure (bootstrap continues).
+func enableHardwareWatchdog() string {
 	exec.Command("modprobe", "bcm2835_wdt").Run()
 	appendUniqueBlock("/etc/modules", "bcm2835_wdt", "bcm2835_wdt\n", func() error { return nil })
 
 	if !commandExists("watchdog") {
-		if !commandExists("apt-get") {
-			log.Println("watchdog package not installed and apt-get unavailable, skipping hardware watchdog")
-			return nil
-		}
-		log.Println("Installing hardware watchdog package")
-		exec.Command("apt-get", "update").Run()
-		if out, err := exec.Command("apt-get", "install", "-y", "watchdog").CombinedOutput(); err != nil {
-			log.Printf("Could not install watchdog package: %v: %s", err, strings.TrimSpace(string(out)))
-			return nil
-		}
+		return "watchdog package not installed (optional; software health watch still active)"
+	}
+
+	if _, err := os.Stat("/dev/watchdog"); err != nil {
+		return "no /dev/watchdog on this board (optional hardware watchdog skipped)"
 	}
 
 	confSrc := findConfigFile("watchdog-tailscale-router.conf")
 	if confSrc == "" {
-		log.Println("watchdog config template not found, skipping")
-		return nil
+		return "watchdog config template not found (skipped)"
 	}
 
 	confData, err := os.ReadFile(confSrc)
 	if err != nil {
-		return err
+		return fmt.Sprintf("read watchdog config: %v", err)
 	}
 
 	marker := "test-binary = /usr/local/bin/router-health-check.sh"
 	if err := appendUniqueBlock("/etc/watchdog.conf", marker, "\n# tailscale-raspberry-router\n"+string(confData), func() error { return nil }); err != nil {
-		return err
+		return fmt.Sprintf("update watchdog.conf: %v", err)
 	}
 
-	if !commandExists("watchdog") {
-		return nil
-	}
-
+	exec.Command("systemctl", "daemon-reload").Run()
 	exec.Command("systemctl", "enable", "watchdog").Run()
 	if err := exec.Command("systemctl", "restart", "watchdog").Run(); err != nil {
-		log.Printf("Warning: could not start watchdog service: %v", err)
+		journal := watchdogJournalTail()
+		return fmt.Sprintf("watchdog service did not start: %v%s", err, journal)
 	}
-	return nil
+
+	if !watchdogServiceActive() {
+		return "watchdog service is not active after restart" + watchdogJournalTail()
+	}
+
+	return ""
+}
+
+func watchdogServiceActive() bool {
+	return exec.Command("systemctl", "is-active", "--quiet", "watchdog").Run() == nil
+}
+
+func watchdogJournalTail() string {
+	out, err := exec.Command("journalctl", "-u", "watchdog", "-n", "8", "--no-pager").CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	text := strings.TrimSpace(string(out))
+	if text == "" {
+		return ""
+	}
+	return "\n" + text
 }
 
 func findConfigFile(name string) string {

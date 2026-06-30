@@ -217,6 +217,10 @@ button:disabled {
   color: #3fb950;
 }
 
+.setup-log .log-warn {
+  color: #d29922;
+}
+
 .setup-log .log-error {
   color: #f85149;
 }
