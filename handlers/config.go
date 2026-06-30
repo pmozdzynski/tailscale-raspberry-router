@@ -34,6 +34,7 @@ var (
 
 func init() {
 	routerConfig = LoadRouterConfig()
+	ReloadAuthCredentials()
 }
 
 func LoadRouterConfig() RouterConfig {
@@ -72,6 +73,7 @@ func SaveRouterConfig(cfg RouterConfig) error {
 	}
 
 	routerConfig = cfg
+	ReloadAuthCredentials()
 	return nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/gorilla/sessions"
@@ -53,18 +54,23 @@ func init() {
 	if password := os.Getenv("AUTH_PASSWORD"); password != "" {
 		defaultPassword = password
 	}
-
-	loadCredentialsFromConfig()
 }
 
 func loadCredentialsFromConfig() {
 	cfg := GetRouterConfig()
+	credentialsMu.Lock()
+	defer credentialsMu.Unlock()
 	if cfg.AdminUsername != "" {
-		defaultUsername = cfg.AdminUsername
+		defaultUsername = strings.TrimSpace(cfg.AdminUsername)
 	}
 	if cfg.AdminPassword != "" {
 		defaultPassword = cfg.AdminPassword
 	}
+}
+
+// ReloadAuthCredentials syncs login credentials from config.json (call after save or at startup).
+func ReloadAuthCredentials() {
+	loadCredentialsFromConfig()
 }
 
 func SetRuntimeCredentials(username, password string) {
@@ -107,13 +113,15 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	username := r.FormValue("username")
+	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
+
+	loadCredentialsFromConfig()
 
 	// Validate credentials
 	expectedUser, expectedPass := getCredentials()
 	if username != expectedUser || password != expectedPass {
-		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
+		http.Redirect(w, r, "/login?error=unauthorized", http.StatusSeeOther)
 		return
 	}
 
