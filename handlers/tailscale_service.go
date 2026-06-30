@@ -55,11 +55,19 @@ func ensureTailscaledRunning() error {
 
 	exec.Command("systemctl", "enable", "tailscaled").Run()
 
+	if tailscaledDaemonReady() {
+		return nil
+	}
+
 	var lastErr error
 	for attempt := 1; attempt <= 5; attempt++ {
-		out, err := exec.Command("systemctl", "restart", "tailscaled").CombinedOutput()
+		cmd := "start"
+		if attempt > 1 {
+			cmd = "restart"
+		}
+		out, err := exec.Command("systemctl", cmd, "tailscaled").CombinedOutput()
 		if err != nil {
-			lastErr = fmt.Errorf("systemctl restart tailscaled: %v: %s", err, strings.TrimSpace(string(out)))
+			lastErr = fmt.Errorf("systemctl %s tailscaled: %v: %s", cmd, err, strings.TrimSpace(string(out)))
 			if strings.Contains(strings.ToLower(string(out)), "failed to load") {
 				lastErr = fmt.Errorf("tailscaled.service invalid on this systemd version: %s%s", strings.TrimSpace(string(out)), tailscaledJournalTail())
 				break
@@ -67,21 +75,46 @@ func ensureTailscaledRunning() error {
 		}
 
 		for i := 0; i < 12; i++ {
-			if _, err := os.Stat(tailscaledSocket); err == nil {
-				if exec.Command("tailscale", "status").Run() == nil {
-					return nil
-				}
+			if tailscaledDaemonReady() {
+				return nil
 			}
 			time.Sleep(500 * time.Millisecond)
 		}
-		log.Printf("Bootstrap: waiting for tailscaled (attempt %d/5)", attempt)
+		log.Printf("Bootstrap: waiting for tailscaled daemon (attempt %d/5)", attempt)
 	}
 
 	journal := tailscaledJournalTail()
 	if lastErr != nil {
 		return fmt.Errorf("%v%s", lastErr, journal)
 	}
-	return fmt.Errorf("tailscaled did not start%s", journal)
+	return fmt.Errorf("tailscaled daemon not reachable (NeedsLogin before tailscale up is OK; socket missing?)%s", journal)
+}
+
+// tailscaledDaemonReady is true when the daemon accepts CLI calls.
+// NeedsLogin / not logged in yet is expected before bootstrap runs tailscale up.
+func tailscaledDaemonReady() bool {
+	if exec.Command("systemctl", "is-active", "--quiet", "tailscaled").Run() != nil {
+		return false
+	}
+	if _, err := os.Stat(tailscaledSocket); err != nil {
+		return false
+	}
+
+	out, err := exec.Command("tailscale", "status", "--json").CombinedOutput()
+	if err == nil {
+		return true
+	}
+
+	text := strings.ToLower(string(out) + " " + err.Error())
+	if strings.Contains(text, "needslogin") ||
+		strings.Contains(text, "not logged in") ||
+		strings.Contains(text, "logged out") ||
+		strings.Contains(text, "nostate") {
+		return true
+	}
+
+	// Last resort: any stdout from status means the socket works.
+	return len(strings.TrimSpace(string(out))) > 0
 }
 
 func tailscaledJournalTail() string {
