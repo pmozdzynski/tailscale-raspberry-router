@@ -39,13 +39,13 @@ func ReloadDnsmasqUpstream() {
 }
 
 // writeInitialUpstreamDNS creates upstream files before dnsmasq first starts.
-func writeInitialUpstreamDNS() error {
+func writeInitialUpstreamDNS(wanInterface string) error {
 	script := updateDnsScript
 	if _, err := os.Stat(script); err != nil {
 		script = updateDnsScriptLocal
 	}
 	if _, err := os.Stat(script); err != nil {
-		return writeFallbackUpstreamDNS()
+		return writeFallbackUpstreamDNS(wanInterface)
 	}
 
 	cmd := exec.Command(script)
@@ -53,16 +53,24 @@ func writeInitialUpstreamDNS() error {
 	if err != nil {
 		return fmt.Errorf("update-dns.sh: %v: %s", err, strings.TrimSpace(string(output)))
 	}
-	return nil
+	return ensureUpstreamServersFile()
 }
 
-func writeFallbackUpstreamDNS() error {
+func ensureUpstreamServersFile() error {
+	path := "/run/tailscale-router/upstream-servers.conf"
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	return writeFallbackUpstreamDNS("")
+}
+
+func writeFallbackUpstreamDNS(wanInterface string) error {
 	dir := "/run/tailscale-router"
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 
-	servers, source := discoverWANDNS()
+	servers, source := discoverWANDNS(wanInterface)
 	if len(servers) == 0 {
 		servers = []string{"1.1.1.1", "9.9.9.9"}
 		source = "no WAN DNS from DHCP"
@@ -83,8 +91,11 @@ func writeFallbackUpstreamDNS() error {
 	return os.WriteFile(dir+"/upstream-servers.conf", []byte(serverConf.String()), 0644)
 }
 
-func discoverWANDNS() ([]string, string) {
-	wan := ConfiguredWAN()
+func discoverWANDNS(wanOverride string) ([]string, string) {
+	wan := wanOverride
+	if wan == "" {
+		wan = ConfiguredWAN()
+	}
 	if wan == "" {
 		iface, err := detectDefaultRouteInterface()
 		if err == nil {

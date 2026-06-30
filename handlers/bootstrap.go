@@ -216,11 +216,13 @@ conf-file=/run/tailscale-router/upstream-servers.conf
 		return err
 	}
 
+	if err := writeInitialUpstreamDNS(cfg.WANInterface); err != nil {
+		return fmt.Errorf("prepare upstream DNS: %w", err)
+	}
+
 	if out, err := exec.Command("dnsmasq", "--test").CombinedOutput(); err != nil {
 		return fmt.Errorf("dnsmasq config test failed: %v: %s", err, strings.TrimSpace(string(out)))
 	}
-
-	writeInitialUpstreamDNS()
 
 	exec.Command("systemctl", "enable", "dnsmasq").Run()
 	if out, err := exec.Command("systemctl", "restart", "dnsmasq").CombinedOutput(); err != nil {
