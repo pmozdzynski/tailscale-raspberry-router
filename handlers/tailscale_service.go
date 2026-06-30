@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	tailscaledUnitPath  = "/etc/systemd/system/tailscaled.service"
-	tailscaledDefaults  = "/etc/default/tailscaled"
-	tailscaledSocket    = "/run/tailscale/tailscaled.sock"
+	tailscaledUnitPath = "/etc/systemd/system/tailscaled.service"
+	tailscaledDefaults = "/etc/default/tailscaled"
+	tailscaledSocket   = "/run/tailscale/tailscaled.sock"
 )
 
 func ensureTailscaledServiceInstalled() error {
@@ -21,39 +21,23 @@ func ensureTailscaledServiceInstalled() error {
 		return err
 	}
 
-	if _, err := os.Stat(tailscaledUnitPath); os.IsNotExist(err) {
-		data, err := readConfigAsset("tailscaled.service")
-		if err != nil {
-			return fmt.Errorf("tailscaled.service template: %w", err)
-		}
-		if err := os.WriteFile(tailscaledUnitPath, data, 0644); err != nil {
-			return err
-		}
-		log.Println("Bootstrap: installed tailscaled.service")
+	// Always refresh the unit: older Pis cannot use StateDirectory/RuntimeDirectory.
+	data, err := readConfigAsset("tailscaled.service")
+	if err != nil {
+		return fmt.Errorf("tailscaled.service template: %w", err)
+	}
+	if err := os.WriteFile(tailscaledUnitPath, data, 0644); err != nil {
+		return err
 	}
 
-	if _, err := os.Stat(tailscaledDefaults); os.IsNotExist(err) {
-		data, err := readConfigAsset("tailscaled.default")
-		if err != nil {
-			return fmt.Errorf("tailscaled defaults template: %w", err)
-		}
-		if detectMachineArch() == "armv6" {
-			data = []byte(`FLAGS="--tun=userspace-networking"
-`)
-			log.Println("Bootstrap: enabling Tailscale userspace networking for ARMv6")
-		}
-		if err := os.WriteFile(tailscaledDefaults, data, 0644); err != nil {
-			return err
-		}
-	} else if detectMachineArch() == "armv6" {
-		content, _ := os.ReadFile(tailscaledDefaults)
-		if !strings.Contains(string(content), "userspace-networking") {
-			if err := os.WriteFile(tailscaledDefaults, []byte(`FLAGS="--tun=userspace-networking"
-`), 0644); err != nil {
-				return err
-			}
-			log.Println("Bootstrap: updated /etc/default/tailscaled for ARMv6")
-		}
+	flags := ""
+	if detectMachineArch() == "armv6" {
+		flags = "--tun=userspace-networking"
+		log.Println("Bootstrap: Tailscale userspace networking for ARMv6")
+	}
+	defaults := fmt.Sprintf("FLAGS=%q\n", flags)
+	if err := os.WriteFile(tailscaledDefaults, []byte(defaults), 0644); err != nil {
+		return err
 	}
 
 	exec.Command("systemctl", "daemon-reload").Run()
@@ -65,9 +49,8 @@ func ensureTailscaledRunning() error {
 		return err
 	}
 
-	if out, err := exec.Command("tailscaled", "--version").CombinedOutput(); err != nil {
-		return fmt.Errorf("tailscaled binary cannot run on this CPU (ARMv6 may need an older Tailscale build): %v: %s",
-			err, strings.TrimSpace(string(out)))
+	if !commandExists("tailscale") {
+		return fmt.Errorf("tailscale CLI not found")
 	}
 
 	exec.Command("systemctl", "enable", "tailscaled").Run()
@@ -77,22 +60,28 @@ func ensureTailscaledRunning() error {
 		out, err := exec.Command("systemctl", "restart", "tailscaled").CombinedOutput()
 		if err != nil {
 			lastErr = fmt.Errorf("systemctl restart tailscaled: %v: %s", err, strings.TrimSpace(string(out)))
+			if strings.Contains(strings.ToLower(string(out)), "failed to load") {
+				lastErr = fmt.Errorf("tailscaled.service invalid on this systemd version: %s%s", strings.TrimSpace(string(out)), tailscaledJournalTail())
+				break
+			}
 		}
 
-		for i := 0; i < 10; i++ {
+		for i := 0; i < 12; i++ {
 			if _, err := os.Stat(tailscaledSocket); err == nil {
-				return nil
+				if exec.Command("tailscale", "status").Run() == nil {
+					return nil
+				}
 			}
 			time.Sleep(500 * time.Millisecond)
 		}
-		log.Printf("Bootstrap: waiting for tailscaled socket (attempt %d/5)", attempt)
+		log.Printf("Bootstrap: waiting for tailscaled (attempt %d/5)", attempt)
 	}
 
 	journal := tailscaledJournalTail()
 	if lastErr != nil {
 		return fmt.Errorf("%v%s", lastErr, journal)
 	}
-	return fmt.Errorf("tailscaled did not create %s%s", tailscaledSocket, journal)
+	return fmt.Errorf("tailscaled did not start%s", journal)
 }
 
 func tailscaledJournalTail() string {
@@ -122,4 +111,16 @@ func tailscaleStaticURL(arch string) string {
 		return "https://pkgs.tailscale.com/stable/tailscale_1.62.0_arm.tgz"
 	}
 	return "https://pkgs.tailscale.com/stable/tailscale_latest_arm.tgz"
+}
+
+func tailscaleBinaryWorks() bool {
+	if !commandExists("tailscale") {
+		return false
+	}
+	out, err := exec.Command("tailscale", "version").CombinedOutput()
+	if err != nil {
+		log.Printf("Bootstrap: existing tailscale binary not usable: %v: %s", err, strings.TrimSpace(string(out)))
+		return false
+	}
+	return true
 }

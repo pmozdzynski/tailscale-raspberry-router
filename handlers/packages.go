@@ -132,8 +132,14 @@ func isPackageInstalled(pkg string) bool {
 }
 
 func installTailscaleIfMissing() error {
+	if tailscaleBinaryWorks() {
+		log.Println("Bootstrap: tailscale already installed")
+		return ensureTailscaledServiceInstalled()
+	}
+
+	// Broken/partial install from a previous attempt.
 	if commandExists("tailscale") {
-		return ensureTailscaledRunning()
+		log.Println("Bootstrap: replacing non-working tailscale binary")
 	}
 
 	if !commandExists("curl") {
@@ -142,8 +148,8 @@ func installTailscaleIfMissing() error {
 
 	log.Println("Bootstrap: installing Tailscale")
 	if out, err := exec.Command("sh", "-c", "curl -fsSL https://tailscale.com/install.sh | sh").CombinedOutput(); err == nil {
-		if commandExists("tailscale") {
-			return ensureTailscaledRunning()
+		if tailscaleBinaryWorks() {
+			return ensureTailscaledServiceInstalled()
 		}
 		log.Printf("Tailscale install script output: %s", strings.TrimSpace(string(out)))
 	}
@@ -154,7 +160,10 @@ func installTailscaleIfMissing() error {
 		if err := installTailscaleStatic(arch); err != nil {
 			return err
 		}
-		return ensureTailscaledRunning()
+		if !tailscaleBinaryWorks() {
+			return fmt.Errorf("tailscale static install finished but binary does not run on this CPU")
+		}
+		return ensureTailscaledServiceInstalled()
 	}
 
 	return fmt.Errorf("could not install Tailscale automatically. Install it manually and re-run setup")

@@ -1,19 +1,16 @@
 [Unit]
 Description=Tailscale node agent
 Documentation=https://tailscale.com/kb/
-Wants=network-pre.target
-After=network-pre.target network-online.target
-Wants=network-online.target
+After=network.target
+Wants=network.target
 
 [Service]
-EnvironmentFile=-/etc/default/tailscaled
-ExecStart=/usr/sbin/tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock --port=41641 $FLAGS
-Restart=on-failure
-RuntimeDirectory=tailscale
-RuntimeDirectoryMode=0755
-StateDirectory=tailscale
-StateDirectoryMode=0700
 Type=simple
+EnvironmentFile=-/etc/default/tailscaled
+ExecStartPre=/bin/mkdir -p /var/lib/tailscale /run/tailscale
+ExecStart=/bin/sh -c 'exec /usr/sbin/tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock --port=41641 ${FLAGS}'
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
