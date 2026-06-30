@@ -1,0 +1,3 @@
+# Extra flags for tailscaled (installed by tailscale-raspberry-router bootstrap).
+# ARMv6 Pis (Pi 1 / Zero) need userspace networking; the bootstrap sets this automatically.
+FLAGS=""

@@ -206,7 +206,7 @@ dhcp-range=%s,%s,%s,%dh
 dhcp-option=option:router,%s
 dhcp-option=option:dns-server,%s
 no-resolv
-resolv-file=/run/tailscale-router/upstream.conf
+conf-file=/run/tailscale-router/upstream-servers.conf
 `, cfg.LANInterface, cfg.LANAddress, cfg.WANInterface,
 		cfg.DHCPRangeStart, cfg.DHCPRangeEnd, netmask, cfg.DHCPLeaseHours,
 		cfg.LANAddress, cfg.LANAddress)
@@ -219,6 +219,8 @@ resolv-file=/run/tailscale-router/upstream.conf
 	if out, err := exec.Command("dnsmasq", "--test").CombinedOutput(); err != nil {
 		return fmt.Errorf("dnsmasq config test failed: %v: %s", err, strings.TrimSpace(string(out)))
 	}
+
+	writeInitialUpstreamDNS()
 
 	exec.Command("systemctl", "enable", "dnsmasq").Run()
 	if out, err := exec.Command("systemctl", "restart", "dnsmasq").CombinedOutput(); err != nil {
@@ -234,7 +236,7 @@ func migrateDnsmasqForRouter() error {
 
 	conflictKeys := []string{
 		"interface=", "bind-interfaces", "listen-address=", "except-interface=",
-		"dhcp-range=", "dhcp-option", "no-resolv", "resolv-file=",
+		"dhcp-range=", "dhcp-option", "no-resolv", "resolv-file=", "conf-file=",
 		"cache-size", "domain-needed", "bogus-priv", "port=",
 	}
 
@@ -321,9 +323,8 @@ func configureTailscale(cfg RouterConfig, authKey string) error {
 		return fmt.Errorf("tailscale is not installed. Bootstrap could not install it automatically")
 	}
 
-	exec.Command("systemctl", "enable", "tailscaled").Run()
-	if err := exec.Command("systemctl", "start", "tailscaled").Run(); err != nil {
-		log.Printf("Warning: could not start tailscaled: %v", err)
+	if err := ensureTailscaledRunning(); err != nil {
+		return err
 	}
 
 	args := []string{

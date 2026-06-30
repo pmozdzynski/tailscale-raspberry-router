@@ -11,7 +11,7 @@ dhcp-option=6,192.168.50.1
 
 # Upstream resolvers are managed by scripts/update-dns.sh
 no-resolv
-resolv-file=/run/tailscale-router/upstream.conf
+conf-file=/run/tailscale-router/upstream-servers.conf
 
 cache-size=1000
 domain-needed
