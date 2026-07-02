@@ -354,27 +354,13 @@ func configureTailscale(cfg RouterConfig, authKey string) error {
 		return err
 	}
 
-	args := []string{
-		"up",
-		"--advertise-exit-node=false",
-		"--accept-routes=false",
-		"--accept-dns=false",
-		"--hostname=" + cfg.TailscaleHost,
-	}
-	if authKey != "" {
-		args = append(args, "--auth-key="+authKey)
-	} else if !getTailscaleSnapshot().Connected {
-		return fmt.Errorf("tailscale auth key is required on fresh installs")
+	snap := getTailscaleSnapshot()
+	if snap.Connected {
+		log.Printf("Bootstrap: Tailscale already connected as %s (%s)", snap.Hostname, snap.IPv4)
 	}
 
-	cmd := exec.Command("tailscale", args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		msg := strings.TrimSpace(string(out))
-		if authKey == "" && strings.Contains(msg, "login") {
-			return fmt.Errorf("tailscale requires login. Provide an auth key in setup or run: sudo tailscale up")
-		}
-		return fmt.Errorf("%v: %s", err, msg)
+	if err := RunBootstrapTailscale(cfg.TailscaleHost, authKey); err != nil {
+		return err
 	}
 
 	ApplyLocalPolicyRouting(cfg)
