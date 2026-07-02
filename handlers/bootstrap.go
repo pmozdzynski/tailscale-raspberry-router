@@ -95,13 +95,8 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 		return fmt.Errorf("initial routing: %w", err)
 	}
 
-	progress.running("enable hardware watchdog", "started")
-	if warn := enableHardwareWatchdog(); warn != "" {
-		log.Printf("Bootstrap: hardware watchdog: %s", warn)
-		progress.warn("enable hardware watchdog", warn)
-	} else {
-		progress.ok("enable hardware watchdog", "completed")
-	}
+	progress.running("enable hardware watchdog", "background (optional)")
+	go runHardwareWatchdogAsync()
 
 	progress.running("finalize setup", "starting dashboard on :5000")
 	schedulePostBootstrapStart(5 * time.Second)
@@ -109,6 +104,15 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 
 	log.Println("Bootstrap completed successfully")
 	return nil
+}
+
+func runHardwareWatchdogAsync() {
+	if warn := enableHardwareWatchdog(); warn != "" {
+		log.Printf("Bootstrap: hardware watchdog: %s", warn)
+		recordSetupProgress("warn", "enable hardware watchdog", warn)
+		return
+	}
+	recordSetupProgress("ok", "enable hardware watchdog", "completed")
 }
 
 func applyInitialRouting(cfg RouterConfig, progress setupProgressReporter) error {
@@ -398,9 +402,7 @@ func enableDNSWatcher() error {
 		return err
 	}
 
-	exec.Command("systemctl", "daemon-reload").Run()
-	exec.Command("systemctl", "enable", "tailscale-dns-watch.service").Run()
-	log.Println("Bootstrap: DNS watcher enabled (will start after setup completes)")
+	log.Println("Bootstrap: DNS watcher unit installed (systemctl runs after setup)")
 	return nil
 }
 

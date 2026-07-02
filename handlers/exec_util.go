@@ -54,11 +54,11 @@ func schedulePostBootstrapStart(delay time.Duration) {
 		sec = 1
 	}
 	script := fmt.Sprintf(`sleep %d
-systemctl enable tailscale-router.service 2>/dev/null || true
+systemctl daemon-reload
+systemctl enable tailscale-router.service tailscale-dns-watch.service tailscale-router-health-watch.service 2>/dev/null || true
 systemctl start tailscale-router.service
 sleep 4
-systemctl start tailscale-dns-watch.service 2>/dev/null || true
-systemctl start tailscale-router-health-watch.service 2>/dev/null || true`, sec)
+systemctl start tailscale-dns-watch.service tailscale-router-health-watch.service 2>/dev/null || true`, sec)
 	cmd := exec.Command("sh", "-c", script)
 	cmd.Stdin = nil
 	cmd.Stdout = nil

@@ -41,9 +41,7 @@ func enableHealthWatch() error {
 		return err
 	}
 
-	exec.Command("systemctl", "daemon-reload").Run()
-	exec.Command("systemctl", "enable", "tailscale-router-health-watch.service").Run()
-	log.Println("Bootstrap: health watch enabled (will start after setup completes)")
+	log.Println("Bootstrap: health watch unit installed (systemctl runs after setup)")
 	return nil
 }
 

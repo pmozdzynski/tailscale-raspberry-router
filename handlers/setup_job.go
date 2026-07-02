@@ -25,6 +25,7 @@ type SetupJobProgress struct {
 	Complete    bool            `json:"complete"`
 	Error       string          `json:"error,omitempty"`
 	Message     string          `json:"message,omitempty"`
+	CurrentStep string          `json:"current_step,omitempty"`
 	Configured  bool            `json:"configured"`
 	Interrupted bool            `json:"interrupted,omitempty"`
 	UpdatedAt   string          `json:"updated_at"`
@@ -32,12 +33,13 @@ type SetupJobProgress struct {
 }
 
 var (
-	setupJobMu      sync.Mutex
-	setupJobRunning bool
-	setupJobLines   []SetupStepLine
-	setupJobError   string
-	setupJobMessage string
-	setupJobDone    bool
+	setupJobMu          sync.Mutex
+	setupJobRunning     bool
+	setupJobLines       []SetupStepLine
+	setupJobError       string
+	setupJobMessage     string
+	setupJobDone        bool
+	setupJobCurrentStep string
 )
 
 func init() {
@@ -84,6 +86,7 @@ func reconcileStaleSetupJob() {
 	setupJobDone = false
 	setupJobError = ""
 	setupJobMessage = ""
+	setupJobCurrentStep = ""
 }
 
 func ClearSetupProgress() {
@@ -94,6 +97,7 @@ func ClearSetupProgress() {
 	setupJobError = ""
 	setupJobMessage = ""
 	setupJobLines = nil
+	setupJobCurrentStep = ""
 	_ = os.Remove(setupProgressFile)
 }
 
@@ -112,12 +116,22 @@ func finishSetupJob(err error, message string) {
 func recordSetupProgress(status, step, detail string) {
 	setupJobMu.Lock()
 	defer setupJobMu.Unlock()
+	setupJobCurrentStep = step
 	setupJobLines = append(setupJobLines, SetupStepLine{
 		Step:   step,
 		Status: status,
 		Detail: detail,
 		At:     time.Now().Format("15:04:05"),
 	})
+	persistSetupProgressLocked()
+}
+
+func touchSetupProgress() {
+	setupJobMu.Lock()
+	defer setupJobMu.Unlock()
+	if !setupJobRunning {
+		return
+	}
 	persistSetupProgressLocked()
 }
 
@@ -132,11 +146,12 @@ func GetSetupJobProgress() SetupJobProgress {
 
 	setupJobMu.Lock()
 	progress := SetupJobProgress{
-		Running:  setupJobRunning,
-		Complete: setupJobDone,
-		Error:    setupJobError,
-		Message:  setupJobMessage,
-		Lines:    append([]SetupStepLine(nil), setupJobLines...),
+		Running:     setupJobRunning,
+		Complete:    setupJobDone,
+		Error:       setupJobError,
+		Message:     setupJobMessage,
+		CurrentStep: setupJobCurrentStep,
+		Lines:       append([]SetupStepLine(nil), setupJobLines...),
 	}
 	setupJobMu.Unlock()
 
@@ -174,13 +189,14 @@ func GetSetupJobProgress() SetupJobProgress {
 func persistSetupProgressLocked() {
 	_ = os.MkdirAll(filepath.Dir(setupProgressFile), 0755)
 	payload := SetupJobProgress{
-		Running:    setupJobRunning,
-		Complete:   setupJobDone,
-		Error:      setupJobError,
-		Message:    setupJobMessage,
-		Configured: IsConfigured(),
-		UpdatedAt:  time.Now().Format(time.RFC3339),
-		Lines:      append([]SetupStepLine(nil), setupJobLines...),
+		Running:     setupJobRunning,
+		Complete:    setupJobDone,
+		Error:       setupJobError,
+		Message:     setupJobMessage,
+		CurrentStep: setupJobCurrentStep,
+		Configured:  IsConfigured(),
+		UpdatedAt:   time.Now().Format(time.RFC3339),
+		Lines:       append([]SetupStepLine(nil), setupJobLines...),
 	}
 	writeSetupProgressFileUnlocked(payload)
 }
@@ -218,6 +234,7 @@ func tryStartSetupJob() bool {
 	setupJobError = ""
 	setupJobMessage = ""
 	setupJobLines = nil
+	setupJobCurrentStep = ""
 	_ = os.Remove(setupProgressFile)
 	persistSetupProgressLocked()
 	return true
@@ -231,6 +248,9 @@ func isSetupJobRunning() bool {
 
 func startSetupJobAsync(cfg RouterConfig, authKey string) {
 	go func() {
+		stopHeartbeat := startSetupHeartbeat()
+		defer stopHeartbeat()
+
 		progress := setupProgressReporterFromJob()
 		err := ApplyBootstrapWithProgress(cfg, authKey, progress)
 		if err != nil {
@@ -245,4 +265,22 @@ func startSetupJobAsync(cfg RouterConfig, authKey string) {
 		}
 		finishSetupJob(nil, msg)
 	}()
+}
+
+func startSetupHeartbeat() func() {
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(3 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				touchSetupProgress()
+			case <-done:
+				return
+			}
+		}
+	}()
+	var once sync.Once
+	return func() { once.Do(func() { close(done) }) }
 }

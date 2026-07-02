@@ -272,6 +272,7 @@ async function applyWithPolling(payload) {
 
   const deadline = Date.now() + 20 * 60 * 1000;
   let lastLineCount = 0;
+  let lastUpdatedAt = "";
   let stalePolls = 0;
   let pollFailures = 0;
 
@@ -282,10 +283,9 @@ async function applyWithPolling(payload) {
       pollFailures = 0;
     } catch (err) {
       pollFailures++;
-      stalePolls++;
       if (pollFailures === 1 || pollFailures % 5 === 0) {
         appendLogLine(
-          `Connection lost (${pollFailures}) — Pi may be restarting or busy, retrying…`,
+          `Connection lost (${pollFailures}) — retrying (bootstrap on :4000 stays up)…`,
           "log-warn"
         );
       }
@@ -296,16 +296,23 @@ async function applyWithPolling(payload) {
     renderProgressLines(progress);
 
     if (progress.lines?.length === lastLineCount && progress.running) {
-      stalePolls++;
-      if (stalePolls === 8 || (stalePolls > 8 && stalePolls % 8 === 0)) {
-        appendLogLine(
-          `Still working (~${Math.round(stalePolls * 1.5)}s on current step)`,
-          "log-warn"
-        );
+      if (progress.updated_at && progress.updated_at !== lastUpdatedAt) {
+        stalePolls = 0;
+        lastUpdatedAt = progress.updated_at;
+      } else {
+        stalePolls++;
+        if (stalePolls === 8 || (stalePolls > 8 && stalePolls % 8 === 0)) {
+          const step = progress.current_step ? ` [${progress.current_step}]` : "";
+          appendLogLine(
+            `Still working (~${Math.round(stalePolls * 1.5)}s${step})`,
+            "log-warn"
+          );
+        }
       }
     } else {
       stalePolls = 0;
       lastLineCount = progress.lines?.length || 0;
+      lastUpdatedAt = progress.updated_at || "";
     }
 
     if (progress.error) {

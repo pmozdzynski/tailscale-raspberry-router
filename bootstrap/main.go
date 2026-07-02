@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"tailscale-raspberry-router/handlers"
 )
@@ -17,9 +18,18 @@ func main() {
 	handlers.RegisterBootstrapRoutes(mux)
 
 	addr := ":" + handlers.BootstrapPort
-	log.Printf("Bootstrap wizard listening on %s (stays up after setup completes)", addr)
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
+	log.Printf("Bootstrap wizard listening on %s (stays up during setup)", addr)
 	log.Printf("Dashboard runs separately on :%s after setup finishes", handlers.RouterPort)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Bootstrap server failed: %v", err)
 	}
 }
