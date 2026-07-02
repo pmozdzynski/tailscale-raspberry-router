@@ -21,6 +21,7 @@ func main() {
 	http.HandleFunc("/setup", handlers.SetupPageHandler)
 	http.HandleFunc("/setup/status", handlers.SetupStatusHandler)
 	http.HandleFunc("/setup/progress", handlers.SetupProgressHandler)
+	http.HandleFunc("/setup/reset", handlers.SetupResetHandler)
 	http.HandleFunc("/setup/apply", handlers.SetupApplyHandler)
 
 	http.HandleFunc("/login", handlers.LoginHandler)

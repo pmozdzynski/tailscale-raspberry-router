@@ -49,6 +49,25 @@ func SetupProgressHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(GetSetupJobProgress())
 }
 
+// SetupResetHandler clears abandoned setup progress so a fresh install can start.
+func SetupResetHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if IsConfigured() {
+		http.Error(w, "Router is already configured", http.StatusConflict)
+		return
+	}
+	if isSetupJobRunning() {
+		http.Error(w, "Setup is already running", http.StatusConflict)
+		return
+	}
+	ClearSetupProgress()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "cleared": true})
+}
+
 // SetupApplyHandler starts first-time bootstrap asynchronously.
 // The browser polls GET /setup/progress until complete (no long-lived SSE).
 func SetupApplyHandler(w http.ResponseWriter, r *http.Request) {
@@ -66,6 +85,8 @@ func SetupApplyHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Setup is already running", http.StatusConflict)
 		return
 	}
+
+	reconcileStaleSetupJob()
 
 	cfg, authKey, err := parseSetupRequest(r)
 	if err != nil {

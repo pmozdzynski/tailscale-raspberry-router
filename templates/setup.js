@@ -288,6 +288,18 @@ async function applyWithPolling(payload) {
   throw new Error("Setup timed out. Check /login or retry.");
 }
 
+async function clearSetupProgress() {
+  await fetch("/setup/reset", { method: "POST" });
+  document.getElementById("setupLog").textContent = "";
+  renderedProgressLines = 0;
+  document.getElementById("setupLogPanel").hidden = true;
+  document.getElementById("clearSetupBtn").hidden = true;
+  const btn = document.getElementById("applyBtn");
+  btn.disabled = false;
+  btn.textContent = "Install & Configure";
+  document.getElementById("setupForm").style.opacity = "1";
+}
+
 async function resumeSetupPollingIfNeeded() {
   let progress;
   try {
@@ -295,7 +307,26 @@ async function resumeSetupPollingIfNeeded() {
   } catch {
     return;
   }
-  if (!progress.running && !progress.complete) {
+
+  if (progress.configured || progress.complete) {
+    if (progress.lines?.length) {
+      document.getElementById("setupLogPanel").hidden = false;
+      renderProgressLines(progress);
+    }
+    await finishSetupSuccess(progress.message);
+    return;
+  }
+
+  if (!progress.running) {
+    if (progress.lines?.length > 0) {
+      document.getElementById("setupLogPanel").hidden = false;
+      renderProgressLines(progress);
+      appendLogLine(
+        "Previous install did not finish (no config saved). Click Install to start again, or Clear log.",
+        "log-warn"
+      );
+      document.getElementById("clearSetupBtn").hidden = false;
+    }
     return;
   }
 
@@ -308,12 +339,6 @@ async function resumeSetupPollingIfNeeded() {
   renderedProgressLines = 0;
 
   try {
-    if (progress.complete) {
-      renderProgressLines(progress);
-      await finishSetupSuccess(progress.message);
-      return;
-    }
-
     appendLogLine("Resuming setup progress...", "log-running");
     const deadline = Date.now() + 20 * 60 * 1000;
     while (Date.now() < deadline) {
@@ -322,8 +347,16 @@ async function resumeSetupPollingIfNeeded() {
       if (progress.error) {
         throw new Error(progress.error);
       }
-      if (progress.complete) {
+      if (progress.complete || progress.configured) {
         await finishSetupSuccess(progress.message);
+        return;
+      }
+      if (!progress.running) {
+        appendLogLine("Setup stopped on device. Click Install to start again.", "log-warn");
+        btn.disabled = false;
+        btn.textContent = "Install & Configure";
+        form.style.opacity = "1";
+        document.getElementById("clearSetupBtn").hidden = false;
         return;
       }
       await sleep(1500);
@@ -334,6 +367,7 @@ async function resumeSetupPollingIfNeeded() {
     btn.disabled = false;
     btn.textContent = "Install & Configure";
     form.style.opacity = "1";
+    document.getElementById("clearSetupBtn").hidden = false;
   }
 }
 
@@ -416,3 +450,12 @@ document.getElementById("setupForm").addEventListener("submit", async (event) =>
 });
 
 window.onload = initSetup;
+
+document.getElementById("clearSetupBtn").addEventListener("click", async () => {
+  try {
+    await clearSetupProgress();
+    showNotification("Cleared. You can run Install again.");
+  } catch (error) {
+    showNotification(error.message, true);
+  }
+});
