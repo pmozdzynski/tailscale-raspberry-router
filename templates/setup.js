@@ -239,15 +239,22 @@ async function applyWithPolling(payload) {
   const deadline = Date.now() + 20 * 60 * 1000;
   let lastLineCount = 0;
   let stalePolls = 0;
+  let pollFailures = 0;
 
   while (Date.now() < deadline) {
     let progress;
     try {
       progress = await loadSetupProgress();
-      stalePolls = 0;
+      pollFailures = 0;
     } catch (err) {
+      pollFailures++;
       stalePolls++;
-      appendLogLine(`Poll failed (${stalePolls}): ${err.message}`, "log-warn");
+      if (pollFailures === 1 || pollFailures % 5 === 0) {
+        appendLogLine(
+          `Connection lost (${pollFailures}) — Pi may be restarting or busy, retrying…`,
+          "log-warn"
+        );
+      }
       await sleep(2000);
       continue;
     }
@@ -256,9 +263,9 @@ async function applyWithPolling(payload) {
 
     if (progress.lines?.length === lastLineCount && progress.running) {
       stalePolls++;
-      if (stalePolls >= 8) {
+      if (stalePolls === 8 || (stalePolls > 8 && stalePolls % 8 === 0)) {
         appendLogLine(
-          `No progress for ~${stalePolls * 1.5}s (step may be slow on Pi — still running)`,
+          `Still working (~${Math.round(stalePolls * 1.5)}s on current step)`,
           "log-warn"
         );
       }

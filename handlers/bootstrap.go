@@ -104,8 +104,8 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 	}
 
 	progress.running("finalize setup", "scheduling tailscale-router restart")
-	scheduleDetachedServiceRestart("tailscale-router", 5*time.Second)
-	progress.ok("finalize setup", "restart scheduled in ~5s — then open /login")
+	schedulePostBootstrapRestart(8 * time.Second)
+	progress.ok("finalize setup", "restart in ~8s — watchers start after reboot")
 
 	log.Println("Bootstrap completed successfully")
 	return nil
@@ -400,10 +400,7 @@ func enableDNSWatcher() error {
 
 	exec.Command("systemctl", "daemon-reload").Run()
 	exec.Command("systemctl", "enable", "tailscale-dns-watch.service").Run()
-	if err := runSystemctlWithTimeout(30*time.Second, "restart", "tailscale-dns-watch.service"); err != nil {
-		log.Printf("Bootstrap: DNS watcher restart: %v (trying start)", err)
-		_ = runSystemctlWithTimeout(15*time.Second, "start", "tailscale-dns-watch.service")
-	}
+	log.Println("Bootstrap: DNS watcher enabled (will start after setup completes)")
 	return nil
 }
 
