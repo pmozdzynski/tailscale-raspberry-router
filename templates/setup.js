@@ -93,9 +93,17 @@ function applySuggestedLAN(snapshot, force = false) {
 }
 
 async function loadSetupStatus() {
-  const response = await fetch("/setup/status");
+  const response = await fetch("/setup/status", { cache: "no-store" });
   if (!response.ok) {
     throw new Error("Failed to load network status");
+  }
+  return response.json();
+}
+
+async function loadSetupProgress() {
+  const response = await fetch("/setup/progress", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error("Failed to load setup progress");
   }
   return response.json();
 }
@@ -150,6 +158,155 @@ function populateInterfaceSelects(snapshot) {
   };
 }
 
+let renderedProgressLines = 0;
+
+function renderProgressLines(progress) {
+  const lines = progress.lines || [];
+  for (let i = renderedProgressLines; i < lines.length; i++) {
+    const line = lines[i];
+    const text = `[${line.step}] ${line.detail || line.status}`;
+    if (line.status === "ok") {
+      appendLogLine("✓ " + text, "log-ok");
+    } else if (line.status === "warn") {
+      appendLogLine("! " + text, "log-warn");
+    } else if (line.status === "error") {
+      appendLogLine("✗ " + text, "log-error");
+    } else {
+      appendLogLine(text, "log-running");
+    }
+  }
+  renderedProgressLines = lines.length;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForServiceReady(timeoutMs = 180000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const snap = await loadSetupStatus();
+      if (snap.configured) {
+        return true;
+      }
+    } catch {
+      // Service may be restarting after setup.
+    }
+    await sleep(2000);
+  }
+  return false;
+}
+
+async function finishSetupSuccess(message) {
+  showNotification(message || "Setup complete");
+  appendLogLine("Waiting for router service after restart...", "log-running");
+  if (await waitForServiceReady()) {
+    appendLogLine("✓ Router service ready — opening login", "log-ok");
+    window.location.href = "/login";
+    return;
+  }
+  appendLogLine("! Service slow — try /login manually", "log-warn");
+  showNotification("Open /login if redirect does not work", true);
+  window.location.href = "/login";
+}
+
+async function applyWithPolling(payload) {
+  const response = await fetch("/setup/apply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (response.status === 409) {
+    throw new Error("Setup is already running on the device");
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Setup failed to start");
+  }
+
+  document.getElementById("setupLogPanel").hidden = false;
+  appendLogLine("Setup started — polling progress...", "log-running");
+
+  const deadline = Date.now() + 20 * 60 * 1000;
+  while (Date.now() < deadline) {
+    let progress;
+    try {
+      progress = await loadSetupProgress();
+    } catch {
+      appendLogLine("Waiting for device (service may be restarting)...", "log-warn");
+      await sleep(2000);
+      continue;
+    }
+
+    renderProgressLines(progress);
+
+    if (progress.error) {
+      throw new Error(progress.error);
+    }
+    if (progress.complete) {
+      if (progress.message) {
+        appendLogLine("✓ " + progress.message, "log-done");
+      }
+      return progress;
+    }
+
+    await sleep(1500);
+  }
+
+  throw new Error("Setup timed out. Check /login or retry.");
+}
+
+async function resumeSetupPollingIfNeeded() {
+  let progress;
+  try {
+    progress = await loadSetupProgress();
+  } catch {
+    return;
+  }
+  if (!progress.running && !progress.complete) {
+    return;
+  }
+
+  const btn = document.getElementById("applyBtn");
+  const form = document.getElementById("setupForm");
+  btn.disabled = true;
+  btn.textContent = "Installing...";
+  form.style.opacity = "0.55";
+  document.getElementById("setupLog").textContent = "";
+  renderedProgressLines = 0;
+
+  try {
+    if (progress.complete) {
+      renderProgressLines(progress);
+      await finishSetupSuccess(progress.message);
+      return;
+    }
+
+    appendLogLine("Resuming setup progress...", "log-running");
+    const deadline = Date.now() + 20 * 60 * 1000;
+    while (Date.now() < deadline) {
+      progress = await loadSetupProgress();
+      renderProgressLines(progress);
+      if (progress.error) {
+        throw new Error(progress.error);
+      }
+      if (progress.complete) {
+        await finishSetupSuccess(progress.message);
+        return;
+      }
+      await sleep(1500);
+    }
+  } catch (error) {
+    appendLogLine(error.message, "log-error");
+    showNotification(error.message, true);
+    btn.disabled = false;
+    btn.textContent = "Install & Configure";
+    form.style.opacity = "1";
+  }
+}
+
 async function initSetup() {
   try {
     const snapshot = await loadSetupStatus();
@@ -159,16 +316,10 @@ async function initSetup() {
     }
     renderNetworkSummary(snapshot);
     populateInterfaceSelects(snapshot);
+    await resumeSetupPollingIfNeeded();
   } catch (error) {
     showNotification(error.message, true);
   }
-}
-
-function escapeHtml(text) {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }
 
 function appendLogLine(text, cssClass = "") {
@@ -184,125 +335,6 @@ function appendLogLine(text, cssClass = "") {
   log.scrollTop = log.scrollHeight;
 }
 
-function formatLogEvent(evt) {
-  const step = evt.step ? `[${evt.step}] ` : "";
-  return `${step}${evt.detail || evt.status}`;
-}
-
-async function waitForSetupComplete(timeoutMs = 120000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const snap = await loadSetupStatus();
-      if (snap.configured) {
-        return true;
-      }
-    } catch {
-      // Server may still be finishing bootstrap.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-  return false;
-}
-
-async function finishSetupSuccess(message) {
-  showNotification(message || "Setup complete");
-  appendLogLine("Waiting for router service after restart...", "log-running");
-  if (await waitForSetupComplete(90000)) {
-    appendLogLine("✓ Router service ready", "log-ok");
-    window.location.href = "/login";
-    return;
-  }
-  appendLogLine("! Service slow to respond — opening /login anyway", "log-warn");
-  showNotification("Open /login if redirect does not work", true);
-  window.location.href = "/login";
-}
-
-function isStreamDisconnectError(message) {
-  const text = String(message || "").toLowerCase();
-  return (
-    text.includes("load failed") ||
-    text.includes("network error") ||
-    text.includes("failed to fetch") ||
-    text.includes("networkconnection")
-  );
-}
-
-async function applyWithStream(payload) {
-  const response = await fetch("/setup/apply?stream=1", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "text/event-stream",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok && !response.body) {
-    const text = await response.text();
-    throw new Error(text || "Setup failed");
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let failed = false;
-  let gotDone = false;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-    buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split("\n\n");
-    buffer = chunks.pop() || "";
-
-    for (const chunk of chunks) {
-      if (chunk.startsWith(":")) {
-        continue;
-      }
-      const line = chunk
-        .split("\n")
-        .find((l) => l.startsWith("data: "));
-      if (!line) {
-        continue;
-      }
-      let evt;
-      try {
-        evt = JSON.parse(line.slice(6));
-      } catch {
-        continue;
-      }
-
-      if (evt.status === "running") {
-        appendLogLine(formatLogEvent(evt), "log-running");
-      } else if (evt.status === "ok") {
-        appendLogLine("✓ " + formatLogEvent(evt), "log-ok");
-      } else if (evt.status === "warn") {
-        appendLogLine("! " + formatLogEvent(evt), "log-warn");
-      } else if (evt.status === "error") {
-        appendLogLine("✗ " + (evt.detail || evt.step || "error"), "log-error");
-        failed = true;
-      } else if (evt.status === "done") {
-        appendLogLine("✓ " + evt.detail, "log-done");
-        gotDone = true;
-        return { status: "done" };
-      }
-    }
-  }
-
-  if (failed) {
-    throw new Error("Setup failed. See log above");
-  }
-
-  if (!gotDone) {
-    return { status: "incomplete" };
-  }
-
-  return { status: "done" };
-}
-
 document.getElementById("setupForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const btn = document.getElementById("applyBtn");
@@ -310,6 +342,7 @@ document.getElementById("setupForm").addEventListener("submit", async (event) =>
   btn.disabled = true;
   btn.textContent = "Installing...";
   document.getElementById("setupLog").textContent = "";
+  renderedProgressLines = 0;
   form.style.opacity = "0.55";
 
   const payload = {
@@ -341,26 +374,9 @@ document.getElementById("setupForm").addEventListener("submit", async (event) =>
   }
 
   try {
-    const result = await applyWithStream(payload);
-    if (result.status === "incomplete") {
-      appendLogLine("Connection closed early — checking if setup finished on device...", "log-warn");
-      if (await waitForSetupComplete()) {
-        appendLogLine("✓ Setup completed on device (config saved)", "log-ok");
-        await finishSetupSuccess();
-        return;
-      }
-      throw new Error("Connection lost before setup finished. Wait a minute, then open /login or retry.");
-    }
-    await finishSetupSuccess("Setup complete. Redirecting to login");
+    const progress = await applyWithPolling(payload);
+    await finishSetupSuccess(progress.message || "Setup complete");
   } catch (error) {
-    if (isStreamDisconnectError(error.message)) {
-      appendLogLine("Browser lost connection — checking if setup finished on device...", "log-warn");
-      if (await waitForSetupComplete()) {
-        appendLogLine("✓ Setup completed on device (config saved)", "log-ok");
-        await finishSetupSuccess();
-        return;
-      }
-    }
     appendLogLine(error.message, "log-error");
     showNotification(error.message, true);
     btn.disabled = false;

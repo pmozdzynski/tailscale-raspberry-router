@@ -91,8 +91,6 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 	}
 	progress.ok("save configuration", "saved")
 	SetRuntimeCredentials(cfg.AdminUsername, cfg.AdminPassword)
-	// Fallback restart if the browser loses the SSE connection before finalize.
-	scheduleRouterServiceRestart(45 * time.Second)
 
 	if err := applyInitialRouting(cfg, progress); err != nil {
 		return fmt.Errorf("initial routing: %w", err)
@@ -107,8 +105,8 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 	}
 
 	progress.running("finalize setup", "restarting tailscale-router service")
-	scheduleRouterServiceRestart(2 * time.Second)
-	progress.ok("finalize setup", "service restarting — /login available in ~15 seconds")
+	scheduleRouterServiceRestart(20 * time.Second)
+	progress.ok("finalize setup", "service restarting — /login available in ~20 seconds")
 
 	log.Println("Bootstrap completed successfully")
 	return nil

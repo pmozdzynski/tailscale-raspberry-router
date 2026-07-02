@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
-	"time"
 )
 
 type setupApplyRequest struct {
@@ -40,7 +38,19 @@ func SetupStatusHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(snapshot)
 }
 
-// SetupApplyHandler runs first-time bootstrap from the web wizard.
+// SetupProgressHandler returns async bootstrap progress for polling clients.
+func SetupProgressHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache")
+	json.NewEncoder(w).Encode(GetSetupJobProgress())
+}
+
+// SetupApplyHandler starts first-time bootstrap asynchronously.
+// The browser polls GET /setup/progress until complete (no long-lived SSE).
 func SetupApplyHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -52,26 +62,31 @@ func SetupApplyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if isSetupJobRunning() {
+		http.Error(w, "Setup is already running", http.StatusConflict)
+		return
+	}
+
 	cfg, authKey, err := parseSetupRequest(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	stream := strings.Contains(r.Header.Get("Accept"), "text/event-stream") ||
-		r.URL.Query().Get("stream") == "1"
-
-	if stream {
-		setupApplyStream(w, cfg, authKey)
+	if !tryStartSetupJob() {
+		http.Error(w, "Setup is already running", http.StatusConflict)
 		return
 	}
 
-	if err := ApplyBootstrapWithProgress(cfg, authKey, nil); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	startSetupJobAsync(cfg, authKey)
 
-	writeSetupOK(w, cfg)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":      true,
+		"started": true,
+		"poll":    "/setup/progress",
+	})
 }
 
 func parseSetupRequest(r *http.Request) (RouterConfig, string, error) {
@@ -127,77 +142,6 @@ func parseSetupRequest(r *http.Request) (RouterConfig, string, error) {
 	}
 
 	return cfg, strings.TrimSpace(req.TailscaleAuthKey), nil
-}
-
-func setupApplyStream(w http.ResponseWriter, cfg RouterConfig, authKey string) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-
-	var writeMu sync.Mutex
-	send := func(status, step, detail string) {
-		writeMu.Lock()
-		defer writeMu.Unlock()
-		payload, _ := json.Marshal(map[string]string{
-			"status": status,
-			"step":   step,
-			"detail": detail,
-		})
-		fmt.Fprintf(w, "data: %s\n\n", payload)
-		flusher.Flush()
-	}
-
-	progress := setupProgressReporter(func(status, step, detail string) {
-		send(status, step, detail)
-	})
-
-	done := make(chan error, 1)
-	go func() {
-		done <- ApplyBootstrapWithProgress(cfg, authKey, progress)
-	}()
-
-	keepalive := time.NewTicker(10 * time.Second)
-	defer keepalive.Stop()
-
-	for {
-		select {
-		case err := <-done:
-			if err != nil {
-				send("error", "", err.Error())
-				return
-			}
-
-			ips := getManagementAccessIPs()
-			loginHint := "Open /login with your dashboard username and password"
-			if len(ips) > 0 {
-				loginHint = fmt.Sprintf("Exit node dashboard: http://%s:5000/ (login: %s)", ips[0], cfg.AdminUsername)
-			}
-			send("done", "", fmt.Sprintf("Router configured. LAN %s on %s. %s", cfg.LANAddress, cfg.LANInterface, loginHint))
-			return
-
-		case <-keepalive.C:
-			writeMu.Lock()
-			fmt.Fprintf(w, ": keepalive\n\n")
-			flusher.Flush()
-			writeMu.Unlock()
-		}
-	}
-}
-
-func writeSetupOK(w http.ResponseWriter, cfg RouterConfig) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":       true,
-		"message":  fmt.Sprintf("Router configured. LAN %s on %s", cfg.LANAddress, cfg.LANInterface),
-		"login_at": "/login",
-	})
 }
 
 // SetupPageHandler serves the first-time setup wizard.
