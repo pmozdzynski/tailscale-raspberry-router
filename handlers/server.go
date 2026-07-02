@@ -6,36 +6,33 @@ import (
 
 func registerStaticAssets(mux *http.ServeMux, includeSetup bool) {
 	fs := http.FileServer(http.Dir("./templates"))
-	serveStatic := func(name string) http.HandlerFunc {
+	serve := func(name string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			fs.ServeHTTP(w, r)
 		}
 	}
-	mux.HandleFunc("/styles.css", serveStatic("styles.css"))
+	mux.HandleFunc("/styles.css", serve("styles.css"))
+	mux.HandleFunc("/script.js", serve("script.js"))
+	mux.HandleFunc("/friendly-names.json", serve("friendly-names.json"))
 	if includeSetup {
-		mux.HandleFunc("/setup.js", serveStatic("setup.js"))
+		mux.HandleFunc("/setup.js", serve("setup.js"))
 	}
-	mux.HandleFunc("/script.js", serveStatic("script.js"))
-	mux.HandleFunc("/friendly-names.json", serveStatic("friendly-names.json"))
 }
 
-// RegisterBootstrapRoutes wires the first-time setup wizard (port 4000).
-// This listener stays up during and after bootstrap so the browser never loses connection.
+// RegisterBootstrapRoutes — setup wizard on port 4000, always running.
 func RegisterBootstrapRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/setup", SetupPageHandler)
 	mux.HandleFunc("/setup/status", SetupStatusHandler)
 	mux.HandleFunc("/setup/progress", SetupProgressHandler)
 	mux.HandleFunc("/setup/reset", SetupResetHandler)
 	mux.HandleFunc("/setup/apply", SetupApplyHandler)
-	mux.HandleFunc("/setup/router-status", SetupRouterStatusHandler)
 	registerStaticAssets(mux, true)
 }
 
-// RegisterRouterRoutes wires the post-setup dashboard (port 5000).
+// RegisterRouterRoutes — dashboard on port 5000.
 func RegisterRouterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/login", LoginHandler)
 	mux.HandleFunc("/logout", LogoutHandler)
-
 	registerStaticAssets(mux, false)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

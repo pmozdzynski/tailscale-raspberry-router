@@ -50,6 +50,7 @@ install_helper_scripts() {
 	for script in update-dns.sh tailscale-dns-watch.sh router-health-check.sh router-health-watch.sh router-watchdog-test.sh bootstrap-verify.sh; do
 		install -m 755 "$REPO_DIR/scripts/$script" "/usr/local/bin/$script"
 	done
+	install -m 755 "$REPO_DIR/scripts/post-setup.sh" "/usr/local/bin/tailscale-router-post-setup.sh"
 }
 
 install_systemd() {

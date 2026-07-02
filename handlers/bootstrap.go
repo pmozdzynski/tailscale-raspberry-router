@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 // ApplyBootstrap configures networking, dnsmasq, Tailscale, and helper scripts.
@@ -67,8 +66,7 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 		{"configure LAN interface", func() error { return configureLANInterface(cfg) }},
 		{"configure dnsmasq", func() error { return configureDnsmasq(cfg) }},
 		{"configure Tailscale", func() error { return configureTailscale(cfg, tailscaleAuthKey) }},
-		{"enable DNS watcher", enableDNSWatcher},
-		{"enable health watch", enableHealthWatch},
+		{"install watch units", installWatchUnits},
 	}
 
 	for _, step := range steps {
@@ -95,24 +93,12 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 		return fmt.Errorf("initial routing: %w", err)
 	}
 
-	progress.running("enable hardware watchdog", "background (optional)")
-	go runHardwareWatchdogAsync()
-
-	progress.running("finalize setup", "starting dashboard on :5000")
-	schedulePostBootstrapStart(5 * time.Second)
-	progress.ok("finalize setup", "dashboard starts in ~5s on port "+RouterPort)
+	progress.running("start dashboard", "port "+RouterPort)
+	startDashboardAfterSetup()
+	progress.ok("start dashboard", "starting on port "+RouterPort)
 
 	log.Println("Bootstrap completed successfully")
 	return nil
-}
-
-func runHardwareWatchdogAsync() {
-	if warn := enableHardwareWatchdog(); warn != "" {
-		log.Printf("Bootstrap: hardware watchdog: %s", warn)
-		recordSetupProgress("warn", "enable hardware watchdog", warn)
-		return
-	}
-	recordSetupProgress("ok", "enable hardware watchdog", "completed")
 }
 
 func applyInitialRouting(cfg RouterConfig, progress setupProgressReporter) error {
@@ -152,9 +138,13 @@ func enableIPForwarding() error {
 func installHelperScripts() error {
 	srcDir := ScriptsDir()
 	targets := map[string]string{
-		"update-dns.sh":          "/usr/local/bin/update-dns.sh",
-		"tailscale-dns-watch.sh": "/usr/local/bin/tailscale-dns-watch.sh",
-		"bootstrap-verify.sh":    "/usr/local/bin/bootstrap-verify.sh",
+		"update-dns.sh":           "/usr/local/bin/update-dns.sh",
+		"tailscale-dns-watch.sh":  "/usr/local/bin/tailscale-dns-watch.sh",
+		"router-health-check.sh":  "/usr/local/bin/router-health-check.sh",
+		"router-health-watch.sh":  "/usr/local/bin/router-health-watch.sh",
+		"router-watchdog-test.sh": "/usr/local/bin/router-watchdog-test.sh",
+		"bootstrap-verify.sh":     "/usr/local/bin/bootstrap-verify.sh",
+		"post-setup.sh":           "/usr/local/bin/tailscale-router-post-setup.sh",
 	}
 
 	for name, dest := range targets {
@@ -167,6 +157,31 @@ func installHelperScripts() error {
 			return err
 		}
 		if err := os.WriteFile(dest, data, 0755); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func installWatchUnits() error {
+	units := []struct {
+		name string
+		dest string
+	}{
+		{"tailscale-dns-watch.service", "/etc/systemd/system/tailscale-dns-watch.service"},
+		{"tailscale-router-health-watch.service", "/etc/systemd/system/tailscale-router-health-watch.service"},
+	}
+	for _, u := range units {
+		src := findConfigFile(u.name)
+		if src == "" {
+			log.Printf("Bootstrap: %s not found, skipping", u.name)
+			continue
+		}
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(u.dest, data, 0644); err != nil {
 			return err
 		}
 	}
@@ -376,33 +391,6 @@ func configureTailscale(cfg RouterConfig, authKey string) error {
 	}
 
 	ApplyLocalPolicyRouting(cfg)
-	return nil
-}
-
-func enableDNSWatcher() error {
-	candidates := []string{
-		filepath.Join(ScriptsDir(), "..", "configs", "tailscale-dns-watch.service"),
-		"/opt/tailscale-raspberry-router/configs/tailscale-dns-watch.service",
-	}
-
-	var data []byte
-	var err error
-	for _, path := range candidates {
-		data, err = os.ReadFile(filepath.Clean(path))
-		if err == nil {
-			break
-		}
-	}
-	if err != nil {
-		log.Printf("DNS watcher service file not found, skipping: %v", err)
-		return nil
-	}
-
-	if err := os.WriteFile("/etc/systemd/system/tailscale-dns-watch.service", data, 0644); err != nil {
-		return err
-	}
-
-	log.Println("Bootstrap: DNS watcher unit installed (systemctl runs after setup)")
 	return nil
 }
 
