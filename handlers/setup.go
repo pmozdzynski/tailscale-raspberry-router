@@ -71,7 +71,6 @@ func SetupApplyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	SetRuntimeCredentials(cfg.AdminUsername, cfg.AdminPassword)
 	writeSetupOK(w, cfg)
 }
 
@@ -174,8 +173,6 @@ func setupApplyStream(w http.ResponseWriter, cfg RouterConfig, authKey string) {
 				send("error", "", err.Error())
 				return
 			}
-
-			SetRuntimeCredentials(cfg.AdminUsername, cfg.AdminPassword)
 
 			ips := getManagementAccessIPs()
 			loginHint := "Open /login with your dashboard username and password"

@@ -206,10 +206,16 @@ async function waitForSetupComplete(timeoutMs = 120000) {
 }
 
 async function finishSetupSuccess(message) {
-  showNotification(message || "Setup complete. Redirecting to login");
-  setTimeout(() => {
+  showNotification(message || "Setup complete");
+  appendLogLine("Waiting for router service after restart...", "log-running");
+  if (await waitForSetupComplete(90000)) {
+    appendLogLine("✓ Router service ready", "log-ok");
     window.location.href = "/login";
-  }, 2000);
+    return;
+  }
+  appendLogLine("! Service slow to respond — opening /login anyway", "log-warn");
+  showNotification("Open /login if redirect does not work", true);
+  window.location.href = "/login";
 }
 
 function isStreamDisconnectError(message) {

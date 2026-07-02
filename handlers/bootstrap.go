@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 )
 
 // ApplyBootstrap configures networking, dnsmasq, Tailscale, and helper scripts.
@@ -88,6 +90,9 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 		return fmt.Errorf("save config: %w", err)
 	}
 	progress.ok("save configuration", "saved")
+	SetRuntimeCredentials(cfg.AdminUsername, cfg.AdminPassword)
+	// Fallback restart if the browser loses the SSE connection before finalize.
+	scheduleRouterServiceRestart(45 * time.Second)
 
 	if err := applyInitialRouting(cfg, progress); err != nil {
 		return fmt.Errorf("initial routing: %w", err)
@@ -101,8 +106,34 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 		progress.ok("enable hardware watchdog", "completed")
 	}
 
+	progress.running("finalize setup", "restarting tailscale-router service")
+	scheduleRouterServiceRestart(2 * time.Second)
+	progress.ok("finalize setup", "service restarting — /login available in ~15 seconds")
+
 	log.Println("Bootstrap completed successfully")
 	return nil
+}
+
+var (
+	routerRestartTimer   *time.Timer
+	routerRestartTimerMu sync.Mutex
+)
+
+// scheduleRouterServiceRestart reloads config, restores routing, and serves /login.
+// Later calls replace an earlier scheduled restart (finalize beats post-save fallback).
+func scheduleRouterServiceRestart(delay time.Duration) {
+	routerRestartTimerMu.Lock()
+	defer routerRestartTimerMu.Unlock()
+	if routerRestartTimer != nil {
+		routerRestartTimer.Stop()
+	}
+	routerRestartTimer = time.AfterFunc(delay, func() {
+		log.Println("Bootstrap: restarting tailscale-router service")
+		out, err := exec.Command("systemctl", "restart", "tailscale-router").CombinedOutput()
+		if err != nil {
+			log.Printf("Bootstrap: systemctl restart tailscale-router: %v: %s", err, strings.TrimSpace(string(out)))
+		}
+	})
 }
 
 func applyInitialRouting(cfg RouterConfig, progress setupProgressReporter) error {
