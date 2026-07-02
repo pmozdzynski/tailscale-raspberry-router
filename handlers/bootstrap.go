@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -104,34 +103,12 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 		progress.ok("enable hardware watchdog", "completed")
 	}
 
-	progress.running("finalize setup", "restarting tailscale-router service")
-	scheduleRouterServiceRestart(20 * time.Second)
-	progress.ok("finalize setup", "service restarting — /login available in ~20 seconds")
+	progress.running("finalize setup", "scheduling tailscale-router restart")
+	scheduleDetachedServiceRestart("tailscale-router", 5*time.Second)
+	progress.ok("finalize setup", "restart scheduled in ~5s — then open /login")
 
 	log.Println("Bootstrap completed successfully")
 	return nil
-}
-
-var (
-	routerRestartTimer   *time.Timer
-	routerRestartTimerMu sync.Mutex
-)
-
-// scheduleRouterServiceRestart reloads config, restores routing, and serves /login.
-// Later calls replace an earlier scheduled restart (finalize beats post-save fallback).
-func scheduleRouterServiceRestart(delay time.Duration) {
-	routerRestartTimerMu.Lock()
-	defer routerRestartTimerMu.Unlock()
-	if routerRestartTimer != nil {
-		routerRestartTimer.Stop()
-	}
-	routerRestartTimer = time.AfterFunc(delay, func() {
-		log.Println("Bootstrap: restarting tailscale-router service")
-		out, err := exec.Command("systemctl", "restart", "tailscale-router").CombinedOutput()
-		if err != nil {
-			log.Printf("Bootstrap: systemctl restart tailscale-router: %v: %s", err, strings.TrimSpace(string(out)))
-		}
-	})
 }
 
 func applyInitialRouting(cfg RouterConfig, progress setupProgressReporter) error {
@@ -423,7 +400,11 @@ func enableDNSWatcher() error {
 
 	exec.Command("systemctl", "daemon-reload").Run()
 	exec.Command("systemctl", "enable", "tailscale-dns-watch.service").Run()
-	return exec.Command("systemctl", "restart", "tailscale-dns-watch.service").Run()
+	if err := runSystemctlWithTimeout(30*time.Second, "restart", "tailscale-dns-watch.service"); err != nil {
+		log.Printf("Bootstrap: DNS watcher restart: %v (trying start)", err)
+		_ = runSystemctlWithTimeout(15*time.Second, "start", "tailscale-dns-watch.service")
+	}
+	return nil
 }
 
 func usesNetworkManager() bool {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 const setupProgressFile = "/run/tailscale-router/setup-progress.json"
@@ -14,6 +15,7 @@ type SetupStepLine struct {
 	Step   string `json:"step"`
 	Status string `json:"status"` // running, ok, warn, error
 	Detail string `json:"detail"`
+	At     string `json:"at"`
 }
 
 // SetupJobProgress is returned by GET /setup/progress.
@@ -23,6 +25,7 @@ type SetupJobProgress struct {
 	Error      string          `json:"error,omitempty"`
 	Message    string          `json:"message,omitempty"`
 	Configured bool            `json:"configured"`
+	UpdatedAt  string          `json:"updated_at"`
 	Lines      []SetupStepLine `json:"lines"`
 }
 
@@ -54,6 +57,7 @@ func recordSetupProgress(status, step, detail string) {
 		Step:   step,
 		Status: status,
 		Detail: detail,
+		At:     time.Now().Format("15:04:05"),
 	})
 	persistSetupProgressLocked()
 }
@@ -67,7 +71,7 @@ func setupProgressReporterFromJob() setupProgressReporter {
 func GetSetupJobProgress() SetupJobProgress {
 	setupJobMu.Lock()
 	progress := SetupJobProgress{
-		Running: setupJobRunning,
+		Running:  setupJobRunning,
 		Complete: setupJobDone,
 		Error:    setupJobError,
 		Message:  setupJobMessage,
@@ -89,11 +93,17 @@ func GetSetupJobProgress() SetupJobProgress {
 		} else if loaded.Running && !loaded.Complete {
 			progress.Running = true
 		}
+		if loaded.UpdatedAt != "" {
+			progress.UpdatedAt = loaded.UpdatedAt
+		}
 	}
 
 	progress.Configured = IsConfigured()
 	if progress.Configured && progress.Complete {
 		progress.Running = false
+	}
+	if progress.UpdatedAt == "" {
+		progress.UpdatedAt = time.Now().Format("15:04:05")
 	}
 	return progress
 }
@@ -106,6 +116,7 @@ func persistSetupProgressLocked() {
 		Error:      setupJobError,
 		Message:    setupJobMessage,
 		Configured: IsConfigured(),
+		UpdatedAt:  time.Now().Format(time.RFC3339),
 		Lines:      append([]SetupStepLine(nil), setupJobLines...),
 	}
 	data, err := json.Marshal(payload)

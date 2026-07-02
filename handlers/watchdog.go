@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 func enableHealthWatch() error {
@@ -43,7 +44,14 @@ func enableHealthWatch() error {
 
 	exec.Command("systemctl", "daemon-reload").Run()
 	exec.Command("systemctl", "enable", "tailscale-router-health-watch.service").Run()
-	return exec.Command("systemctl", "restart", "tailscale-router-health-watch.service").Run()
+
+	if err := runSystemctlWithTimeout(30*time.Second, "restart", "tailscale-router-health-watch.service"); err != nil {
+		log.Printf("Bootstrap: health watch restart: %v (trying start)", err)
+		if err := runSystemctlWithTimeout(15*time.Second, "start", "tailscale-router-health-watch.service"); err != nil {
+			log.Printf("Bootstrap: health watch start: %v (will enable on next boot)", err)
+		}
+	}
+	return nil
 }
 
 // enableHardwareWatchdog configures the Pi hardware watchdog when available.

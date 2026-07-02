@@ -164,7 +164,8 @@ function renderProgressLines(progress) {
   const lines = progress.lines || [];
   for (let i = renderedProgressLines; i < lines.length; i++) {
     const line = lines[i];
-    const text = `[${line.step}] ${line.detail || line.status}`;
+    const ts = line.at ? ` [${line.at}]` : "";
+    const text = `[${line.step}] ${line.detail || line.status}${ts}`;
     if (line.status === "ok") {
       appendLogLine("✓ " + text, "log-ok");
     } else if (line.status === "warn") {
@@ -176,6 +177,12 @@ function renderProgressLines(progress) {
     }
   }
   renderedProgressLines = lines.length;
+  if (progress.updated_at) {
+    const el = document.getElementById("progressUpdated");
+    if (el) {
+      el.textContent = `Last update: ${progress.updated_at}`;
+    }
+  }
 }
 
 function sleep(ms) {
@@ -230,17 +237,35 @@ async function applyWithPolling(payload) {
   appendLogLine("Setup started — polling progress...", "log-running");
 
   const deadline = Date.now() + 20 * 60 * 1000;
+  let lastLineCount = 0;
+  let stalePolls = 0;
+
   while (Date.now() < deadline) {
     let progress;
     try {
       progress = await loadSetupProgress();
-    } catch {
-      appendLogLine("Waiting for device (service may be restarting)...", "log-warn");
+      stalePolls = 0;
+    } catch (err) {
+      stalePolls++;
+      appendLogLine(`Poll failed (${stalePolls}): ${err.message}`, "log-warn");
       await sleep(2000);
       continue;
     }
 
     renderProgressLines(progress);
+
+    if (progress.lines?.length === lastLineCount && progress.running) {
+      stalePolls++;
+      if (stalePolls >= 8) {
+        appendLogLine(
+          `No progress for ~${stalePolls * 1.5}s (step may be slow on Pi — still running)`,
+          "log-warn"
+        );
+      }
+    } else {
+      stalePolls = 0;
+      lastLineCount = progress.lines?.length || 0;
+    }
 
     if (progress.error) {
       throw new Error(progress.error);
@@ -250,6 +275,11 @@ async function applyWithPolling(payload) {
         appendLogLine("✓ " + progress.message, "log-done");
       }
       return progress;
+    }
+
+    if (progress.configured && !progress.running) {
+      appendLogLine("✓ Config saved on device", "log-ok");
+      return { ...progress, complete: true };
     }
 
     await sleep(1500);
