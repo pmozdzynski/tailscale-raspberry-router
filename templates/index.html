@@ -34,6 +34,22 @@
             Switch to Direct Internet
         </button>
         <br /><br />
+
+        <div class="status-box diagnostics-box">
+            <h3>Troubleshooting</h3>
+            <p class="hint">Run diagnostics to copy a full health report. Use repair to re-apply routing, DNS, and MSS clamp.</p>
+            <div class="diag-actions">
+                <button type="button" id="runDiagnosticsBtn" class="direct">Run Diagnostics</button>
+                <button type="button" id="repairRoutingBtn" class="private-node">Repair Routing &amp; DNS</button>
+                <button type="button" id="copyDiagBtn" class="exit-node" disabled>Copy Log</button>
+            </div>
+        </div>
+
+        <div id="diagLogPanel" class="setup-log-panel" hidden>
+            <h3>Diagnostic log</h3>
+            <pre id="diagLog" class="setup-log" aria-live="polite"></pre>
+        </div>
+        <br />
     </div>
 
     <script src="script.js"></script>

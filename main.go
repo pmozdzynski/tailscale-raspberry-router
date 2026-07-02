@@ -52,6 +52,8 @@ func main() {
 
 	http.HandleFunc("/status", handlers.RequireAuth(handlers.StatusHandler))
 	http.HandleFunc("/set-mode", handlers.RequireAuth(handlers.SetModeHandler))
+	http.HandleFunc("/diagnostics/run", handlers.RequireAuth(handlers.DiagnosticsRunHandler))
+	http.HandleFunc("/diagnostics/repair", handlers.RequireAuth(handlers.DiagnosticsRepairHandler))
 
 	go func() {
 		log.Println("Starting server on :5000")

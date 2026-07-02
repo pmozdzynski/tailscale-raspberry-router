@@ -8,6 +8,7 @@ import (
 const (
 	routerForwardChain = "TS-ROUTER-FWD"
 	routerNatChain     = "TS-ROUTER-NAT"
+	routerMSSChain     = "TS-ROUTER-MSS"
 )
 
 func ensureRouterIPTablesChains() {
@@ -26,6 +27,41 @@ func flushRouterIPTablesRules() {
 	ensureRouterIPTablesChains()
 	exec.Command("iptables", "-F", routerForwardChain).Run()
 	exec.Command("iptables", "-t", "nat", "-F", routerNatChain).Run()
+	clearRouterMSSClamp()
+}
+
+func ensureRouterMSSChain() {
+	exec.Command("iptables", "-t", "mangle", "-N", routerMSSChain).Run()
+	if exec.Command("iptables", "-t", "mangle", "-C", "FORWARD", "-j", routerMSSChain).Run() != nil {
+		exec.Command("iptables", "-t", "mangle", "-A", "FORWARD", "-j", routerMSSChain).Run()
+	}
+}
+
+// ensureRouterMSSClamp prevents LAN TCP sessions from exceeding tailscale0 MTU (1280).
+func ensureRouterMSSClamp(outIface string) {
+	ensureRouterMSSChain()
+	args := []string{
+		"-t", "mangle", "-C", routerMSSChain,
+		"-o", outIface, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN",
+		"-j", "TCPMSS", "--clamp-mss-to-pmtu",
+	}
+	if exec.Command("iptables", args...).Run() == nil {
+		return
+	}
+	appendArgs := []string{
+		"-t", "mangle", "-A", routerMSSChain,
+		"-o", outIface, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN",
+		"-j", "TCPMSS", "--clamp-mss-to-pmtu",
+	}
+	if err := exec.Command("iptables", appendArgs...).Run(); err != nil {
+		log.Printf("iptables MSS clamp for %s: %v", outIface, err)
+	} else {
+		log.Printf("iptables MSS clamp enabled on %s", outIface)
+	}
+}
+
+func clearRouterMSSClamp() {
+	exec.Command("iptables", "-t", "mangle", "-F", routerMSSChain).Run()
 }
 
 func appendRouterForwardRule(args ...string) {

@@ -81,10 +81,16 @@ func sendArpPing(ip string) {
 	}
 }
 
-// Flush ARP cache to speed up routing changes
-func flushARPCache() {
-	exec.Command("ip", "-s", "-s", "neigh", "flush", "all").Run()
-	log.Println("ARP cache flushed")
+// flushLANARPCache clears neighbor entries on LAN interfaces only (not WAN/tailscale0).
+func flushLANARPCache() {
+	lanInterfaces, err := GetLANInterfaces()
+	if err != nil {
+		return
+	}
+	for _, iface := range lanInterfaces {
+		exec.Command("ip", "neigh", "flush", "dev", iface).Run()
+		log.Printf("ARP cache flushed on %s", iface)
+	}
 }
 
 // Flush routing cache to force route recalculation
@@ -127,8 +133,7 @@ func sendGratuitousARP(interfaceName string) {
 
 // Speed up routing changes by flushing caches and sending ARP announcements
 func speedUpRoutingChanges() {
-	// Flush ARP and routing caches
-	flushARPCache()
+	flushLANARPCache()
 	flushRoutingCache()
 
 	// Get LAN interfaces and send gratuitous ARP
@@ -189,6 +194,7 @@ func SetTailscaleExitNode(node string) error {
 	log.Println("Using tailscale0 interface for NAT (exit node mode)")
 
 	appendRouterNatMasquerade("tailscale0")
+	ensureRouterMSSClamp("tailscale0")
 
 	// Get LAN interfaces and set up forwarding rules
 	lanInterfaces, err := GetLANInterfaces()

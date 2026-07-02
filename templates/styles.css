@@ -229,3 +229,16 @@ button:disabled {
   color: #d2a8ff;
   font-weight: bold;
 }
+
+.diagnostics-box {
+  text-align: left;
+}
+
+.diag-actions {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.diag-actions button {
+  width: 100%;
+}

@@ -36,6 +36,21 @@ func ReloadDnsmasqUpstream() {
 	if len(output) > 0 {
 		log.Printf("update-dns.sh: %s", string(output))
 	}
+	ensureDnsmasqRunning()
+}
+
+func ensureDnsmasqRunning() {
+	if exec.Command("systemctl", "is-active", "--quiet", "dnsmasq").Run() == nil {
+		return
+	}
+	log.Println("dnsmasq not running; starting service")
+	if err := exec.Command("systemctl", "start", "dnsmasq").Run(); err != nil {
+		log.Printf("failed to start dnsmasq: %v", err)
+		return
+	}
+	if err := exec.Command("systemctl", "reload", "dnsmasq").Run(); err != nil {
+		_ = exec.Command("systemctl", "restart", "dnsmasq").Run()
+	}
 }
 
 // writeInitialUpstreamDNS creates upstream files before dnsmasq first starts.

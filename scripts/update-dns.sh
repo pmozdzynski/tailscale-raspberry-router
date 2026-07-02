@@ -199,7 +199,13 @@ if command -v systemctl >/dev/null 2>&1; then
 			exit 1
 		fi
 	else
-		log "dnsmasq is not running. Upstream file updated only"
+		log "dnsmasq is not running; starting service"
+		if systemctl start "$DNSMASQ_SERVICE" 2>/dev/null; then
+			log "dnsmasq started"
+		else
+			log "ERROR: failed to start dnsmasq"
+			exit 1
+		fi
 	fi
 else
 	if command -v service >/dev/null 2>&1; then

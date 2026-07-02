@@ -203,4 +203,100 @@ async function switchMode(mode, node = "") {
 window.onload = async () => {
   await loadFriendlyNames();
   fetchStatus();
+  bindDiagnosticsUI();
 };
+
+function bindDiagnosticsUI() {
+  document.getElementById("runDiagnosticsBtn").addEventListener("click", () => {
+    runDiagnosticStream("/diagnostics/run?stream=1", "runDiagnosticsBtn", "Run Diagnostics");
+  });
+  document.getElementById("repairRoutingBtn").addEventListener("click", () => {
+    runDiagnosticStream("/diagnostics/repair?stream=1", "repairRoutingBtn", "Repair Routing & DNS");
+  });
+  document.getElementById("copyDiagBtn").addEventListener("click", async () => {
+    const text = document.getElementById("diagLog").textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      showNotification("Log copied to clipboard");
+    } catch {
+      showNotification("Copy failed — select log text manually");
+    }
+  });
+}
+
+function appendDiagLine(text) {
+  const log = document.getElementById("diagLog");
+  const panel = document.getElementById("diagLogPanel");
+  panel.hidden = false;
+  log.textContent += text + "\n";
+  log.scrollTop = log.scrollHeight;
+  document.getElementById("copyDiagBtn").disabled = false;
+}
+
+async function runDiagnosticStream(url, btnId, btnLabel) {
+  const btn = document.getElementById(btnId);
+  const repairBtn = document.getElementById("repairRoutingBtn");
+  const diagBtn = document.getElementById("runDiagnosticsBtn");
+  btn.disabled = true;
+  diagBtn.disabled = true;
+  repairBtn.disabled = true;
+  document.getElementById("diagLog").textContent = "";
+  document.getElementById("copyDiagBtn").disabled = true;
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { Accept: "text/event-stream" },
+    });
+
+    if (!response.ok || !response.body) {
+      const text = await response.text();
+      throw new Error(text || "Request failed");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop() || "";
+
+      for (const chunk of chunks) {
+        const line = chunk.split("\n").find((l) => l.startsWith("data: "));
+        if (!line) {
+          continue;
+        }
+        let evt;
+        try {
+          evt = JSON.parse(line.slice(6));
+        } catch {
+          continue;
+        }
+        if (evt.status === "line") {
+          appendDiagLine(evt.detail || "");
+        } else if (evt.status === "done") {
+          appendDiagLine("✓ " + (evt.detail || "done"));
+          showNotification(evt.detail || "Complete");
+          fetchStatus();
+        } else if (evt.status === "error") {
+          appendDiagLine("✗ " + (evt.detail || "error"));
+          showNotification(evt.detail || "Failed");
+        }
+      }
+    }
+  } catch (error) {
+    appendDiagLine(error.message);
+    showNotification(error.message);
+  } finally {
+    btn.disabled = false;
+    diagBtn.disabled = false;
+    repairBtn.disabled = false;
+    btn.textContent = btnLabel;
+  }
+}
