@@ -174,8 +174,12 @@ func SetTailscaleExitNode(node string) error {
 	exec.Command("sysctl", "-w", "net.netfilter.nf_conntrack_tcp_timeout_established=432000").Run()
 	exec.Command("sysctl", "-w", "net.netfilter.nf_conntrack_tcp_timeout_time_wait=120").Run()
 
-	// Set Tailscale exit node
-	err = exec.Command("tailscale", "set", "--exit-node="+exitNode.IP).Run()
+	// Allow LAN access while the router itself uses an exit node (required for
+	// forwarding LAN client traffic without breaking local subnet routing).
+	err = exec.Command("tailscale", "set",
+		"--exit-node="+exitNode.IP,
+		"--exit-node-allow-lan-access",
+	).Run()
 	if err != nil {
 		return err
 	}
