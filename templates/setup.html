@@ -12,7 +12,8 @@
     <div class="container setup-container">
         <h2>Tailscale Router: First-Time Setup</h2>
         <p class="setup-intro">
-            Assumes a fresh Linux device. WAN keeps whatever IP your ISP/router assigns via DHCP.
+            Bootstrap wizard on port <strong>4000</strong> (this page). Dashboard after setup on port <strong>5000</strong>.
+            WAN keeps whatever IP your ISP/router assigns via DHCP.
             This wizard installs dnsmasq and Tailscale, then configures LAN routing.
         </p>
 
@@ -75,6 +76,14 @@
             <button type="submit" id="applyBtn" class="direct">Install &amp; Configure</button>
             <button type="button" id="clearSetupBtn" class="exit-node" hidden>Clear log &amp; start fresh</button>
         </form>
+
+        <div id="completedPanel" class="status-box" hidden>
+            <h3>Setup complete</h3>
+            <p id="completedMessage">The router dashboard is running on port 5000.</p>
+            <p><a id="dashboardLink" href="#" target="_blank" rel="noopener">Open dashboard login</a></p>
+            <p class="hint">This bootstrap wizard stays on port 4000. Remove config below to run setup again.</p>
+            <button type="button" id="rebootstrapBtn" class="exit-node">Remove config &amp; run setup again</button>
+        </div>
 
         <div id="setupLogPanel" class="setup-log-panel" hidden>
             <h3>Install log</h3>

@@ -83,6 +83,25 @@ func GetRouterConfig() RouterConfig {
 	return routerConfig
 }
 
+func DeleteRouterConfig() error {
+	configMu.Lock()
+	defer configMu.Unlock()
+
+	if err := os.Remove(configFile); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	routerConfig = RouterConfig{LANPrefix: 24, DHCPLeaseHours: 12}
+	ReloadAuthCredentials()
+	return nil
+}
+
+func ReloadRouterConfigFromDisk() {
+	configMu.Lock()
+	routerConfig = LoadRouterConfig()
+	configMu.Unlock()
+	ReloadAuthCredentials()
+}
+
 func IsConfigured() bool {
 	cfg := GetRouterConfig()
 	return cfg.Configured && cfg.WANInterface != "" && cfg.LANInterface != ""

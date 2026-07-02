@@ -103,9 +103,9 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 		progress.ok("enable hardware watchdog", "completed")
 	}
 
-	progress.running("finalize setup", "scheduling tailscale-router restart")
-	schedulePostBootstrapRestart(8 * time.Second)
-	progress.ok("finalize setup", "restart in ~8s — watchers start after reboot")
+	progress.running("finalize setup", "starting dashboard on :5000")
+	schedulePostBootstrapStart(5 * time.Second)
+	progress.ok("finalize setup", "dashboard starts in ~5s on port "+RouterPort)
 
 	log.Println("Bootstrap completed successfully")
 	return nil

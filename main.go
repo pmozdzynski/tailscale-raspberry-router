@@ -18,54 +18,19 @@ func checkRootPrivileges() {
 func main() {
 	checkRootPrivileges()
 
-	http.HandleFunc("/setup", handlers.SetupPageHandler)
-	http.HandleFunc("/setup/status", handlers.SetupStatusHandler)
-	http.HandleFunc("/setup/progress", handlers.SetupProgressHandler)
-	http.HandleFunc("/setup/reset", handlers.SetupResetHandler)
-	http.HandleFunc("/setup/apply", handlers.SetupApplyHandler)
-
-	http.HandleFunc("/login", handlers.LoginHandler)
-	http.HandleFunc("/logout", handlers.LogoutHandler)
-
-	fs := http.FileServer(http.Dir("./templates"))
-	serveStatic := func(name string) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			fs.ServeHTTP(w, r)
-		}
-	}
-	http.HandleFunc("/styles.css", serveStatic("styles.css"))
-	http.HandleFunc("/script.js", serveStatic("script.js"))
-	http.HandleFunc("/setup.js", serveStatic("setup.js"))
-	http.HandleFunc("/friendly-names.json", serveStatic("friendly-names.json"))
-
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if !handlers.IsConfigured() {
-			http.Redirect(w, r, "/setup", http.StatusSeeOther)
-			return
-		}
-		handlers.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/" {
-				http.ServeFile(w, r, "./templates/index.html")
-				return
-			}
-			fs.ServeHTTP(w, r)
-		})(w, r)
-	})
-
-	http.HandleFunc("/status", handlers.RequireAuth(handlers.StatusHandler))
-	http.HandleFunc("/set-mode", handlers.RequireAuth(handlers.SetModeHandler))
-	http.HandleFunc("/diagnostics/run", handlers.RequireAuth(handlers.DiagnosticsRunHandler))
-	http.HandleFunc("/diagnostics/repair", handlers.RequireAuth(handlers.DiagnosticsRepairHandler))
+	mux := http.NewServeMux()
+	handlers.RegisterRouterRoutes(mux)
 
 	go func() {
-		log.Println("Starting server on :5000")
+		addr := ":" + handlers.RouterPort
+		log.Printf("Router dashboard listening on %s", addr)
 		if handlers.IsConfigured() {
-			log.Println("Router is configured. Dashboard at http://<device-ip>:5000/")
+			log.Println("Dashboard ready at http://<device-ip>:" + handlers.RouterPort + "/")
 		} else {
-			log.Println("First boot. Open http://<device-ip>:5000/setup to configure")
+			log.Println("Not configured yet — use bootstrap wizard on :" + handlers.BootstrapPort + "/setup")
 		}
-		if err := http.ListenAndServe(":5000", nil); err != nil {
-			log.Fatalf("Server failed: %v", err)
+		if err := http.ListenAndServe(addr, mux); err != nil {
+			log.Fatalf("Router server failed: %v", err)
 		}
 	}()
 

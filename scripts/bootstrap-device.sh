@@ -63,7 +63,7 @@ clone_or_update_repo() {
 }
 
 build_binary() {
-	log "Compiling tailscale-raspberry-router"
+	log "Compiling tailscale-raspberry-router and bootstrap wizard"
 	cd "$REPO_DIR"
 
 	export CGO_ENABLED=0
@@ -74,7 +74,8 @@ build_binary() {
 	fi
 
 	go build -o tailscale-raspberry-router main.go
-	chmod +x tailscale-raspberry-router
+	go build -o tailscale-router-bootstrap bootstrap/main.go
+	chmod +x tailscale-raspberry-router tailscale-router-bootstrap
 }
 
 run_installer() {

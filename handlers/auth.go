@@ -94,7 +94,7 @@ func getCredentials() (string, string) {
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		if !IsConfigured() {
-			http.Redirect(w, r, "/setup", http.StatusSeeOther)
+			http.Redirect(w, r, BootstrapSetupURL(r), http.StatusSeeOther)
 			return
 		}
 		// Serve login page
@@ -163,7 +163,7 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !IsConfigured() {
-			http.Redirect(w, r, "/setup", http.StatusSeeOther)
+			http.Redirect(w, r, BootstrapSetupURL(r), http.StatusSeeOther)
 			return
 		}
 
@@ -174,7 +174,7 @@ func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// Check for static assets (CSS, JS, etc.)
-		if r.URL.Path == "/styles.css" || r.URL.Path == "/script.js" || r.URL.Path == "/setup.js" ||
+		if r.URL.Path == "/styles.css" || r.URL.Path == "/script.js" ||
 			r.URL.Path == "/friendly-names.json" {
 			next(w, r)
 			return

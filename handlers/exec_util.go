@@ -46,15 +46,16 @@ func runSystemctlWithTimeout(timeout time.Duration, args ...string) error {
 	return nil
 }
 
-// schedulePostBootstrapRestart restarts tailscale-router, then starts watcher units.
-// Watchers are only enabled during bootstrap (no systemctl restart) to avoid dbus hangs on Pi.
-func schedulePostBootstrapRestart(delay time.Duration) {
+// schedulePostBootstrapStart enables and starts the dashboard service plus watcher units.
+// Bootstrap on :4000 is never restarted, so the browser keeps its connection.
+func schedulePostBootstrapStart(delay time.Duration) {
 	sec := int(delay.Seconds())
 	if sec < 1 {
 		sec = 1
 	}
 	script := fmt.Sprintf(`sleep %d
-systemctl restart tailscale-router
+systemctl enable tailscale-router.service 2>/dev/null || true
+systemctl start tailscale-router.service
 sleep 4
 systemctl start tailscale-dns-watch.service 2>/dev/null || true
 systemctl start tailscale-router-health-watch.service 2>/dev/null || true`, sec)
@@ -63,9 +64,9 @@ systemctl start tailscale-router-health-watch.service 2>/dev/null || true`, sec)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	if err := cmd.Start(); err != nil {
-		log.Printf("Bootstrap: post-setup restart script failed: %v", err)
+		log.Printf("Bootstrap: post-setup start script failed: %v", err)
 		scheduleDetachedServiceRestart("tailscale-router", delay)
 		return
 	}
-	log.Printf("Bootstrap: scheduled post-setup restart in %s", delay)
+	log.Printf("Bootstrap: scheduled dashboard start in %s", delay)
 }

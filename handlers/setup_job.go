@@ -160,7 +160,7 @@ func GetSetupJobProgress() SetupJobProgress {
 	progress.Configured = IsConfigured()
 	if progress.Configured && !progress.Complete && !progress.Running && progress.Error == "" {
 		progress.Complete = true
-		progress.Message = "Router configured. Open /login."
+		progress.Message = "Router configured. Dashboard on port " + RouterPort + "."
 	}
 	if progress.Configured && progress.Complete {
 		progress.Running = false
@@ -239,9 +239,9 @@ func startSetupJobAsync(cfg RouterConfig, authKey string) {
 		}
 
 		ips := getManagementAccessIPs()
-		msg := "Router configured. Open /login with your dashboard password."
+		msg := "Router configured. Open the dashboard login on port " + RouterPort + "."
 		if len(ips) > 0 {
-			msg = "Router configured. Login at http://" + ips[0] + ":5000/login"
+			msg = "Router configured. Dashboard login: " + RouterLoginURL(ips[0])
 		}
 		finishSetupJob(nil, msg)
 	}()

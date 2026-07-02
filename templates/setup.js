@@ -1,3 +1,14 @@
+const BOOTSTRAP_PORT = window.location.port || "4000";
+const ROUTER_PORT = "5000";
+
+function routerBaseURL() {
+  return `http://${window.location.hostname}:${ROUTER_PORT}`;
+}
+
+function bootstrapSetupURL(ip) {
+  return `http://${ip}:${BOOTSTRAP_PORT}/setup`;
+}
+
 function showNotification(message, isError = false) {
   const infoBox = document.getElementById("infoBox");
   infoBox.textContent = message;
@@ -55,11 +66,13 @@ function renderNetworkSummary(snapshot) {
   const access = document.getElementById("accessUrls");
   if (snapshot.management_ips?.length) {
     access.innerHTML =
-      "Open setup at: " +
-      snapshot.management_ips.map((ip) => `<code>http://${ip}:5000/setup</code>`).join(" or ");
+      "Bootstrap wizard (this page): " +
+      snapshot.management_ips.map((ip) => `<code>${bootstrapSetupURL(ip)}</code>`).join(" or ") +
+      `<br>Dashboard after setup: ` +
+      snapshot.management_ips.map((ip) => `<code>http://${ip}:${ROUTER_PORT}/login</code>`).join(" or ");
   } else {
     access.textContent =
-      "No IP detected yet. Connect WAN/LAN, wait for DHCP, then open http://<device-ip>:5000/setup";
+      "No IP detected yet. Connect WAN/LAN, wait for DHCP, then open http://<device-ip>:4000/setup";
   }
 
   const pkg = document.getElementById("packageStatus");
@@ -189,33 +202,54 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForServiceReady(timeoutMs = 180000) {
+async function loadRouterStatus() {
+  const response = await fetch("/setup/router-status", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error("Failed to load router status");
+  }
+  return response.json();
+}
+
+async function waitForRouterReady(timeoutMs = 180000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const snap = await loadSetupStatus();
-      if (snap.configured) {
-        return true;
+      const status = await loadRouterStatus();
+      if (status.configured && status.router_running) {
+        return status;
       }
     } catch {
-      // Service may be restarting after setup.
+      // Bootstrap stays up; dashboard may still be starting.
     }
     await sleep(2000);
   }
-  return false;
+  return null;
 }
 
 async function finishSetupSuccess(message) {
   showNotification(message || "Setup complete");
-  appendLogLine("Waiting for router service after restart...", "log-running");
-  if (await waitForServiceReady()) {
-    appendLogLine("✓ Router service ready — opening login", "log-ok");
-    window.location.href = "/login";
+  appendLogLine("Starting dashboard on port " + ROUTER_PORT + "...", "log-running");
+  const status = await waitForRouterReady();
+  const loginURL = status?.dashboard_url || routerBaseURL() + "/login";
+  if (status) {
+    appendLogLine("✓ Dashboard ready — opening login", "log-ok");
+    showCompletedPanel(message, loginURL);
+    window.open(loginURL, "_blank");
     return;
   }
-  appendLogLine("! Service slow — try /login manually", "log-warn");
-  showNotification("Open /login if redirect does not work", true);
-  window.location.href = "/login";
+  appendLogLine("! Dashboard slow to start — open login manually", "log-warn");
+  showCompletedPanel(message, loginURL);
+  showNotification("Open dashboard login if the new tab did not open", true);
+}
+
+function showCompletedPanel(message, loginURL) {
+  document.getElementById("setupForm").hidden = true;
+  document.getElementById("completedPanel").hidden = false;
+  document.getElementById("completedMessage").textContent =
+    message || "Setup complete. Dashboard runs on port " + ROUTER_PORT + ".";
+  const link = document.getElementById("dashboardLink");
+  link.href = loginURL;
+  link.textContent = loginURL;
 }
 
 async function applyWithPolling(payload) {
@@ -295,8 +329,16 @@ async function applyWithPolling(payload) {
   throw new Error("Setup timed out. Check /login or retry.");
 }
 
-async function clearSetupProgress() {
-  await fetch("/setup/reset", { method: "POST" });
+async function clearSetupProgress(rebootstrap = false) {
+  const response = await fetch("/setup/reset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rebootstrap }),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Failed to reset setup");
+  }
   document.getElementById("setupLog").textContent = "";
   renderedProgressLines = 0;
   document.getElementById("setupLogPanel").hidden = true;
@@ -320,7 +362,12 @@ async function resumeSetupPollingIfNeeded() {
       document.getElementById("setupLogPanel").hidden = false;
       renderProgressLines(progress);
     }
-    await finishSetupSuccess(progress.message);
+    try {
+      const status = await loadRouterStatus();
+      showCompletedPanel(progress.message, status.dashboard_url || routerBaseURL() + "/login");
+    } catch {
+      showCompletedPanel(progress.message, routerBaseURL() + "/login");
+    }
     return;
   }
 
@@ -381,11 +428,27 @@ async function resumeSetupPollingIfNeeded() {
 async function initSetup() {
   try {
     const snapshot = await loadSetupStatus();
+    renderNetworkSummary(snapshot);
     if (snapshot.configured) {
-      window.location.href = "/login";
+      try {
+        const status = await loadRouterStatus();
+        showCompletedPanel("Router is configured.", status.dashboard_url || routerBaseURL() + "/login");
+      } catch {
+        showCompletedPanel("Router is configured.", routerBaseURL() + "/login");
+      }
+      if (document.getElementById("setupLogPanel")) {
+        try {
+          const progress = await loadSetupProgress();
+          if (progress.lines?.length) {
+            document.getElementById("setupLogPanel").hidden = false;
+            renderProgressLines(progress);
+          }
+        } catch {
+          // ignore
+        }
+      }
       return;
     }
-    renderNetworkSummary(snapshot);
     populateInterfaceSelects(snapshot);
     await resumeSetupPollingIfNeeded();
   } catch (error) {
@@ -457,6 +520,24 @@ document.getElementById("setupForm").addEventListener("submit", async (event) =>
 });
 
 window.onload = initSetup;
+
+document.getElementById("rebootstrapBtn")?.addEventListener("click", async () => {
+  if (!confirm("Remove saved config and stop the dashboard? You can run setup again from this page.")) {
+    return;
+  }
+  try {
+    await clearSetupProgress(true);
+    document.getElementById("completedPanel").hidden = true;
+    document.getElementById("setupForm").hidden = false;
+    document.getElementById("setupLog").textContent = "";
+    renderedProgressLines = 0;
+    document.getElementById("setupLogPanel").hidden = true;
+    showNotification("Config removed. Run Install & Configure again.");
+    await initSetup();
+  } catch (error) {
+    showNotification(error.message, true);
+  }
+});
 
 document.getElementById("clearSetupBtn").addEventListener("click", async () => {
   try {
