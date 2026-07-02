@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 )
 
 type setupApplyRequest struct {
@@ -138,8 +140,12 @@ func setupApplyStream(w http.ResponseWriter, cfg RouterConfig, authKey string) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 
+	var writeMu sync.Mutex
 	send := func(status, step, detail string) {
+		writeMu.Lock()
+		defer writeMu.Unlock()
 		payload, _ := json.Marshal(map[string]string{
 			"status": status,
 			"step":   step,
@@ -153,20 +159,39 @@ func setupApplyStream(w http.ResponseWriter, cfg RouterConfig, authKey string) {
 		send(status, step, detail)
 	})
 
-	err := ApplyBootstrapWithProgress(cfg, authKey, progress)
-	if err != nil {
-		send("error", "", err.Error())
-		return
-	}
+	done := make(chan error, 1)
+	go func() {
+		done <- ApplyBootstrapWithProgress(cfg, authKey, progress)
+	}()
 
-	SetRuntimeCredentials(cfg.AdminUsername, cfg.AdminPassword)
+	keepalive := time.NewTicker(10 * time.Second)
+	defer keepalive.Stop()
 
-	ips := getManagementAccessIPs()
-	loginHint := "Open /login with your dashboard username and password"
-	if len(ips) > 0 {
-		loginHint = fmt.Sprintf("Exit node dashboard: http://%s:5000/ (login: %s)", ips[0], cfg.AdminUsername)
+	for {
+		select {
+		case err := <-done:
+			if err != nil {
+				send("error", "", err.Error())
+				return
+			}
+
+			SetRuntimeCredentials(cfg.AdminUsername, cfg.AdminPassword)
+
+			ips := getManagementAccessIPs()
+			loginHint := "Open /login with your dashboard username and password"
+			if len(ips) > 0 {
+				loginHint = fmt.Sprintf("Exit node dashboard: http://%s:5000/ (login: %s)", ips[0], cfg.AdminUsername)
+			}
+			send("done", "", fmt.Sprintf("Router configured. LAN %s on %s. %s", cfg.LANAddress, cfg.LANInterface, loginHint))
+			return
+
+		case <-keepalive.C:
+			writeMu.Lock()
+			fmt.Fprintf(w, ": keepalive\n\n")
+			flusher.Flush()
+			writeMu.Unlock()
+		}
 	}
-	send("done", "", fmt.Sprintf("Router configured. LAN %s on %s. %s", cfg.LANAddress, cfg.LANInterface, loginHint))
 }
 
 func writeSetupOK(w http.ResponseWriter, cfg RouterConfig) {

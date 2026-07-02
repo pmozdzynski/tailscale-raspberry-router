@@ -189,6 +189,39 @@ function formatLogEvent(evt) {
   return `${step}${evt.detail || evt.status}`;
 }
 
+async function waitForSetupComplete(timeoutMs = 120000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const snap = await loadSetupStatus();
+      if (snap.configured) {
+        return true;
+      }
+    } catch {
+      // Server may still be finishing bootstrap.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  return false;
+}
+
+async function finishSetupSuccess(message) {
+  showNotification(message || "Setup complete. Redirecting to login");
+  setTimeout(() => {
+    window.location.href = "/login";
+  }, 2000);
+}
+
+function isStreamDisconnectError(message) {
+  const text = String(message || "").toLowerCase();
+  return (
+    text.includes("load failed") ||
+    text.includes("network error") ||
+    text.includes("failed to fetch") ||
+    text.includes("networkconnection")
+  );
+}
+
 async function applyWithStream(payload) {
   const response = await fetch("/setup/apply?stream=1", {
     method: "POST",
@@ -208,6 +241,7 @@ async function applyWithStream(payload) {
   const decoder = new TextDecoder();
   let buffer = "";
   let failed = false;
+  let gotDone = false;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -219,6 +253,9 @@ async function applyWithStream(payload) {
     buffer = chunks.pop() || "";
 
     for (const chunk of chunks) {
+      if (chunk.startsWith(":")) {
+        continue;
+      }
       const line = chunk
         .split("\n")
         .find((l) => l.startsWith("data: "));
@@ -243,7 +280,8 @@ async function applyWithStream(payload) {
         failed = true;
       } else if (evt.status === "done") {
         appendLogLine("✓ " + evt.detail, "log-done");
-        return;
+        gotDone = true;
+        return { status: "done" };
       }
     }
   }
@@ -251,6 +289,12 @@ async function applyWithStream(payload) {
   if (failed) {
     throw new Error("Setup failed. See log above");
   }
+
+  if (!gotDone) {
+    return { status: "incomplete" };
+  }
+
+  return { status: "done" };
 }
 
 document.getElementById("setupForm").addEventListener("submit", async (event) => {
@@ -291,12 +335,26 @@ document.getElementById("setupForm").addEventListener("submit", async (event) =>
   }
 
   try {
-    await applyWithStream(payload);
-    showNotification("Setup complete. Redirecting to login");
-    setTimeout(() => {
-      window.location.href = "/login";
-    }, 4000);
+    const result = await applyWithStream(payload);
+    if (result.status === "incomplete") {
+      appendLogLine("Connection closed early — checking if setup finished on device...", "log-warn");
+      if (await waitForSetupComplete()) {
+        appendLogLine("✓ Setup completed on device (config saved)", "log-ok");
+        await finishSetupSuccess();
+        return;
+      }
+      throw new Error("Connection lost before setup finished. Wait a minute, then open /login or retry.");
+    }
+    await finishSetupSuccess("Setup complete. Redirecting to login");
   } catch (error) {
+    if (isStreamDisconnectError(error.message)) {
+      appendLogLine("Browser lost connection — checking if setup finished on device...", "log-warn");
+      if (await waitForSetupComplete()) {
+        appendLogLine("✓ Setup completed on device (config saved)", "log-ok");
+        await finishSetupSuccess();
+        return;
+      }
+    }
     appendLogLine(error.message, "log-error");
     showNotification(error.message, true);
     btn.disabled = false;

@@ -106,15 +106,17 @@ func ApplyBootstrapWithProgress(cfg RouterConfig, tailscaleAuthKey string, progr
 }
 
 func applyInitialRouting(cfg RouterConfig, progress setupProgressReporter) error {
-	progress.running("initial routing", "direct mode + DNS reload")
+	progress.running("initial routing", "policy routing + IP forwarding")
 
 	ApplyLocalPolicyRouting(cfg)
 	if err := EnsureIPForwarding(); err != nil {
 		progress.warn("initial routing", "IP forwarding: "+err.Error())
 	}
 
+	progress.running("initial routing", "reloading DNS upstream")
 	ReloadDnsmasqUpstream()
 
+	progress.running("initial routing", "direct mode NAT + forwarding")
 	mu.Lock()
 	flushRouterIPTablesRules()
 	if err := clearTailscaleExitNode(); err != nil {
