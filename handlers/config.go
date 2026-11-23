@@ -73,7 +73,7 @@ func SaveRouterConfig(cfg RouterConfig) error {
 	}
 
 	routerConfig = cfg
-	ReloadAuthCredentials()
+	SetRuntimeCredentials(routerConfig.AdminUsername, routerConfig.AdminPassword)
 	return nil
 }
 
@@ -91,7 +91,7 @@ func DeleteRouterConfig() error {
 		return err
 	}
 	routerConfig = RouterConfig{LANPrefix: 24, DHCPLeaseHours: 12}
-	ReloadAuthCredentials()
+	SetRuntimeCredentials(routerConfig.AdminUsername, routerConfig.AdminPassword)
 	return nil
 }
 

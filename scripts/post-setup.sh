@@ -8,6 +8,6 @@ systemctl daemon-reload
 systemctl enable tailscale-router.service 2>/dev/null || true
 systemctl enable tailscale-dns-watch.service 2>/dev/null || true
 systemctl enable tailscale-router-health-watch.service 2>/dev/null || true
-systemctl start tailscale-router.service
+systemctl restart tailscale-router.service
 systemctl start tailscale-dns-watch.service 2>/dev/null || true
 systemctl start tailscale-router-health-watch.service 2>/dev/null || true
